@@ -1,0 +1,5 @@
+{
+  "name": "MediScan AI Dashboard",
+  "description": "A responsive medical dashboard for doctors featuring real-time case notifications and AI-powered patient analysis using Gemini 2.5 Flash.",
+  "requestFramePermissions": []
+}
