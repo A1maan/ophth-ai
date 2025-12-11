@@ -17,7 +17,7 @@ import {
   Activity,
   Layers
 } from 'lucide-react';
-import { analyzeMedicalImage } from '../services/geminiService';
+import { analyzeMedicalImage } from '../services/apiService';
 import { 
   LineChart, 
   Line, 
@@ -109,7 +109,8 @@ const PatientDetails = () => {
       });
       
     } catch (err: any) {
-      setError("Failed to analyze image. Please ensure API key is valid and image is clear.");
+      const errorMessage = err?.message || "Failed to analyze image.";
+      setError(`Analysis failed: ${errorMessage}`);
     } finally {
       setAnalyzing(false);
     }
