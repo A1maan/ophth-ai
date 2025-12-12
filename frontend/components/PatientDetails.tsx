@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useDashboard } from '../contexts/DashboardContext';
 import { 
@@ -38,6 +38,7 @@ const PatientDetails = () => {
   const [error, setError] = useState<string | null>(null);
   const [meetingDate, setMeetingDate] = useState('');
   const [viewMode, setViewMode] = useState<'original' | 'heatmap'>('original');
+  const autoAnalyzeTriggeredRef = useRef<string | null>(null);
 
   // Get patient from context. If context updates (via updatePatient), this component re-renders.
   const patient = getPatientById(id || '');
@@ -127,15 +128,21 @@ const PatientDetails = () => {
     if (!patient) return;
     const shouldAutoAnalyze = autoAnalyzePatientId === patient.id && !analysisResult && !analyzing;
     if (!shouldAutoAnalyze) return;
+    if (autoAnalyzeTriggeredRef.current === patient.id) return;
     if (!imagePreview) {
       setError("Incoming alert has no image attached. Please upload one to analyze.");
       clearAutoAnalyze();
       return;
     }
 
+    autoAnalyzeTriggeredRef.current = patient.id;
     const run = async () => {
-      await handleAnalyze();
-      clearAutoAnalyze();
+      try {
+        await handleAnalyze();
+      } finally {
+        clearAutoAnalyze();
+        autoAnalyzeTriggeredRef.current = null;
+      }
     };
     run();
   }, [autoAnalyzePatientId, patient?.id, analysisResult, analyzing, clearAutoAnalyze, imagePreview]);
