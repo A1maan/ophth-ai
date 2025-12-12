@@ -12,7 +12,6 @@ import numpy as np
 from PIL import Image
 from tensorflow.keras.applications.mobilenet_v2 import (
     MobileNetV2,
-    preprocess_input as mobilenet_preprocess,
 )
 from tensorflow.keras.applications.vgg16 import VGG16
 from tensorflow.keras.layers import Dense, Flatten, GlobalAveragePooling2D
@@ -94,6 +93,76 @@ def _weights_path(classifier_type: str) -> Path:
     return path
 
 
+def _load_fundus_weights_compat(model: Model, weights_path: Path) -> bool:
+    """
+    Custom H5 loader for the MobileNetV2 fundus model.
+
+    The saved file (MobileNetV2_custom.h5) was produced with an older
+    Sequential wrapper, so Keras 3's standard load_weights skips the backbone
+    weights. This routine manually maps layer weights so the backbone is not
+    left random (which causes ~12.5% uniform outputs).
+    """
+    try:
+        import h5py  # type: ignore
+    except Exception as exc:  # pragma: no cover - optional dependency
+        print(f"[classifier] h5py unavailable, cannot load fundus weights: {exc}")
+        return False
+
+    loaded_layers = 0
+    try:
+        with h5py.File(str(weights_path), "r") as f:
+            root = f.get("model_weights")
+            if root is None:
+                return False
+
+            # Find the MobileNetV2 backbone group (allow name suffixes)
+            backbone_group = None
+            for key in root.keys():
+                if str(key).startswith("mobilenetv2"):
+                    backbone_group = root.get(key)
+                    break
+            if backbone_group is None:
+                return False
+
+            def _assign(layer: Model, group) -> int:
+                weight_values = []
+                for weight in layer.weights:
+                    key = weight.name.split(":")[0]
+                    if key in group:
+                        weight_values.append(group[key][()])
+                    elif f"{key}:0" in group:
+                        weight_values.append(group[f"{key}:0"][()])
+                if weight_values:
+                    layer.set_weights(weight_values)
+                    return 1
+                return 0
+
+            # Backbone layers (conv/depthwise/bn etc.)
+            for layer in model.layers:
+                if layer.name in backbone_group:
+                    loaded_layers += _assign(layer, backbone_group[layer.name])
+
+            # Classifier head layers live under sequential/dense_X
+            head_groups = []
+            for head_name in ("dense", "dense_1", "dense_2"):
+                head_container = root.get(head_name)
+                seq_group = head_container.get("sequential") if head_container else None
+                head_group = seq_group.get(head_name) if seq_group else None  # type: ignore[index]
+                if head_group is not None:
+                    head_groups.append(head_group)
+
+            dense_layers = [layer for layer in model.layers if isinstance(layer, Dense)]
+            for layer, group in zip(dense_layers, head_groups):
+                loaded_layers += _assign(layer, group)
+
+        if loaded_layers:
+            print(f"[classifier] Fundus weights loaded via compatibility path ({loaded_layers} layers)")
+        return loaded_layers > 0
+    except Exception as exc:
+        print(f"[classifier] Fundus weight compat load failed: {exc}")
+        return False
+
+
 def _build_model(classifier_type: str, num_classes: int) -> Model:
     """Construct the classifier architecture matching training."""
     if classifier_type == "fundus":
@@ -163,7 +232,11 @@ def load_classifier_model(classifier_type: str = "oct") -> Tuple[Model, str]:
         model = _build_model(classifier_type, num_classes)
         try:
             # Fundus weights may have truncated layer list; load by name to avoid mismatch errors.
-            model.load_weights(str(weights_path), by_name=True, skip_mismatch=True)
+            loaded = False
+            if classifier_type == "fundus":
+                loaded = _load_fundus_weights_compat(model, weights_path)
+            if not loaded:
+                model.load_weights(str(weights_path), by_name=True, skip_mismatch=True)
         except TypeError:
             # Older TF may not support skip_mismatch kwarg; retry without.
             model.load_weights(str(weights_path))
@@ -184,7 +257,8 @@ def preprocess_image(image: Image.Image, classifier_type: str = "oct") -> np.nda
     arr = np.array(img).astype("float32")
 
     if classifier_type == "fundus":
-        arr = mobilenet_preprocess(arr)
+        # Notebook training (mobilenetv2 (3).ipynb) used ImageDataGenerator(rescale=1./255)
+        arr = arr / 255.0
     else:
         arr = arr / 255.0
 
