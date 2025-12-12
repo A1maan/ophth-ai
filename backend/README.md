@@ -9,6 +9,7 @@ FastAPI backend for the Ophth-AI ophthalmology AI assistant.
 - 🤖 **AI Analysis**: Integration with OctoMed-7B for eye image analysis
 - 📊 **Oculomics Data**: Track and analyze eye health metrics
 - 🔄 **Workflow Management**: Patient care workflow tracking
+- 📂 **Demo Folder Watcher**: Drop OCT/OCTA images into a watch folder and let the system auto-create dummy patients, run AI analysis, and push WebSocket alerts in real time.
 
 ## Tech Stack
 
@@ -79,6 +80,19 @@ python main.py
 The API will be available at `http://localhost:8000`
 
 **Note**: First startup will download the OctoMed-7B model (~14GB) from Hugging Face.
+
+### 5. Demo Folder Watcher
+
+The backend now watches `backend/incoming_scans` (configurable via `WATCH_FOLDER_PATH`) whenever `WATCH_FOLDER_ENABLED=true`.
+
+1. Place any OCT/OCTA image (png/jpg/webp/bmp) inside that folder.
+2. The watcher automatically:
+   - Generates a dummy patient record with randomized metadata
+   - Converts the image to base64 and attaches it to the patient
+   - Triggers the AI pipeline and streams the result through WebSockets
+3. Processed files are moved to `backend/incoming_scans/processed` so you can keep track of what has been analyzed.
+
+You can tweak polling cadence, allowed extensions, or disable the watcher entirely by editing the related settings in `app/config.py` or your `.env`.
 
 ## API Documentation
 

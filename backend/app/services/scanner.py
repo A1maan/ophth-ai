@@ -7,7 +7,7 @@ for patients with pending images and runs AI analysis on them.
 
 import asyncio
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional
 from sqlalchemy.orm import Session
 
 from app.config import settings

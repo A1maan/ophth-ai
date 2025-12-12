@@ -5,15 +5,24 @@
 export interface ScannerNotification {
   type: 'scanner_notification';
   data: {
+    event: 'abnormality_detected' | 'analysis_complete';
     patient_id: string;
     patient_name: string;
     classification: string;
     confidence: number;
     severity: 'critical' | 'warning' | 'info' | 'success';
+    findings: string[];
+    recommendation: string;
     message: string;
-    findings?: string[];
-    recommendation?: string;
-    notification_subtype?: 'abnormality_detected' | 'analysis_complete';
+    timestamp: string;
+  };
+}
+
+export interface ScannerStatus {
+  type: 'scanner_status';
+  data: {
+    status: string;
+    pending_count: number;
     timestamp: string;
   };
 }
@@ -26,7 +35,11 @@ export interface ConnectionStatus {
   };
 }
 
-export type WebSocketMessage = ScannerNotification | ConnectionStatus;
+export type WebSocketMessage =
+  | ScannerNotification
+  | ConnectionStatus
+  | ScannerStatus
+  | { type: string; data?: any };
 
 type MessageHandler = (message: WebSocketMessage) => void;
 

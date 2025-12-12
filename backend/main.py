@@ -36,6 +36,14 @@ async def lifespan(app: FastAPI):
     else:
         print("ℹ️ Background scanner is disabled")
     
+    # Start folder watcher for demo ingestion
+    if settings.WATCH_FOLDER_ENABLED:
+        print(f"📁 Watching folder for new demo scans: {settings.WATCH_FOLDER_PATH}")
+        from app.services.folder_watcher import start_folder_watcher
+        start_folder_watcher()
+    else:
+        print("ℹ️ Folder watcher is disabled")
+    
     yield
     
     # Shutdown: Stop scanner
@@ -43,6 +51,11 @@ async def lifespan(app: FastAPI):
         print("🛑 Stopping background scanner...")
         from app.services.scanner import stop_scanner
         stop_scanner()
+    
+    if settings.WATCH_FOLDER_ENABLED:
+        print("🛑 Stopping folder watcher...")
+        from app.services.folder_watcher import stop_folder_watcher
+        stop_folder_watcher()
     
     # Shutdown: Cleanup AI model
     print("🧹 Cleaning up resources...")

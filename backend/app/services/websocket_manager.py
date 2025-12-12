@@ -90,6 +90,7 @@ class ConnectionManager:
         message = {
             "type": "scanner_notification",  # Unified type for all scanner notifications
             "data": {
+                "event": notification_type,
                 "patient_id": patient_id,
                 "patient_name": patient_name,
                 "classification": classification,
@@ -98,9 +99,8 @@ class ConnectionManager:
                 "recommendation": recommendation,
                 "severity": severity,
                 "message": human_message,
-                "notification_subtype": notification_type,  # Keep original type as subtype
-                "timestamp": datetime.utcnow().isoformat() + "Z"
-            }
+                "timestamp": datetime.utcnow().isoformat() + "Z",
+            },
         }
         await self.broadcast(message)
     

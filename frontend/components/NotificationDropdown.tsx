@@ -1,5 +1,5 @@
 import React from 'react';
-import { Bell, AlertCircle, Info, CheckCircle } from 'lucide-react';
+import { Bell, AlertCircle, Info, CheckCircle, AlertTriangle } from 'lucide-react';
 import { useDashboard } from '../contexts/DashboardContext';
 import { useNavigate } from 'react-router-dom';
 
@@ -45,6 +45,8 @@ const NotificationDropdown: React.FC<Props> = ({ isOpen, onClose }) => {
                     <AlertCircle className="w-4 h-4 text-red-500" />
                   ) : notif.type === 'success' ? (
                     <CheckCircle className="w-4 h-4 text-green-500" />
+                  ) : notif.type === 'warning' ? (
+                    <AlertTriangle className="w-4 h-4 text-amber-500" />
                   ) : (
                     <Info className="w-4 h-4 text-blue-500" />
                   )}

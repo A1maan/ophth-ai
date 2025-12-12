@@ -28,6 +28,12 @@ class Settings(BaseSettings):
     SCANNER_ENABLED: bool = True
     SCANNER_INTERVAL_SECONDS: int = 30  # How often to scan for pending images
     
+    # Folder watcher for demo ingestion
+    WATCH_FOLDER_ENABLED: bool = True
+    WATCH_FOLDER_PATH: str = "./incoming_scans"
+    WATCH_FOLDER_POLL_SECONDS: int = 15
+    WATCH_FOLDER_EXTENSIONS: List[str] = ["jpg", "jpeg", "png", "bmp", "webp"]
+    
     # Abnormality Detection Thresholds
     CRITICAL_CONFIDENCE_THRESHOLD: float = 80.0
     WARNING_CONFIDENCE_THRESHOLD: float = 60.0
