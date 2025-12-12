@@ -146,32 +146,50 @@ async def analyze_eye_image(image_data: str) -> dict:
     # Run auxiliary VGG16 classifier for context (best-effort).
     classifier_result = None
     classifier_context = ""
-    if settings.ENABLE_CLASSIFIER:
-        try:
-            from app.services.classifier import classify_image, format_classifier_context
+    gradcam_image = None
+    gradcam_insights = None
+    modality_result = None
 
-            classifier_result = classify_image(image)
-            classifier_context = format_classifier_context(classifier_result)
-        except Exception as cls_error:
-            classifier_context = (
-                "Auxiliary classifier could not run for this image; "
-                f"proceed with visual analysis only. Error: {cls_error}"
-            )
-            print(f"Classifier inference error: {cls_error}")
+    try:
+        from app.services.classifier import (
+            format_classifier_context,
+            run_classifier_with_gradcam,
+        )
+
+        classifier_bundle = run_classifier_with_gradcam(image)
+        classifier_result = classifier_bundle.get("classifier")
+        classifier_context = format_classifier_context(classifier_result)
+        gradcam_image = classifier_bundle.get("gradcam_image")
+        gradcam_insights = classifier_bundle.get("gradcam_insights")
+        modality_result = classifier_bundle.get("modality")
+    except Exception as cls_error:
+        classifier_context = (
+            "Auxiliary classifier could not run for this image; "
+            f"proceed with visual analysis only. Error: {cls_error}"
+        )
+        print(f"Classifier inference error: {cls_error}")
     
+    modality_text = (
+        f"Imaging modality detected: {modality_result.get('modality')} "
+        f"({modality_result.get('confidence', 0):.1f}% confidence)."
+        if modality_result
+        else "Imaging modality not detected automatically; interpret using standard retinal imaging best practices."
+    )
+
     # Save temporarily to create proper message format
     # OctoMed expects image path or URL, so we'll use PIL image directly
     
     # Create the analysis prompt
     prompt_parts = [
         "You are an expert AI ophthalmology assistant specialized in analyzing eye and retinal images.",
-        "Auxiliary context from a separate VGG16 OCT classifier (use as a hint but verify visually):",
+        modality_text,
+        "Auxiliary context from a separate image classifier (use as a hint but verify visually):",
         classifier_context or "No auxiliary classifier output is available for this image.",
         "",
-        "Analyze this medical eye scan/image/cross-sectional OCT angiography (OCTA) B-scan of the retina and provide a detailed structured report.",
+        "Analyze this ophthalmic scan (OCT B-scan, OCTA, or fundus photo) and provide a detailed structured report.",
         "Respond with a JSON object containing:",
         '1. "classification": The primary diagnosis or condition (e.g., "Diabetic Retinopathy", "Glaucoma Suspect", "Normal", etc.). Please also consider the results from the auxiliary classifier above.',
-        '2. "confidence": A number from 0 to 100 indicating certainty taken from VGG16 classifier (Highest Probability)',
+        '2. "confidence": A number from 0 to 100 indicating certainty (you may reference the auxiliary classifier confidence but rely on visual evidence).',
         '3. "findings": An array of specific observations from the image',
         '4. "recommendation": A clear recommendation for the ophthalmologist',
         '5. "explanation": A detailed explanation on how you arrived at the classification and key findings.',
@@ -231,6 +249,12 @@ async def analyze_eye_image(image_data: str) -> dict:
         # Attach classifier context to response for transparency
         if classifier_result:
             result["classifier"] = classifier_result
+        if modality_result:
+            result["modality"] = modality_result
+        if gradcam_image:
+            result["gradcam_image"] = gradcam_image
+        if gradcam_insights:
+            result["gradcam_insights"] = gradcam_insights
         
         return result
         

@@ -43,6 +43,22 @@ class ClassifierResult(BaseModel):
     label: str
     confidence: float = Field(..., ge=0, le=100)
     probabilities: Dict[str, float]
+    model: Optional[str] = None
+    classifier_type: Optional[str] = None
+
+
+class ModalityResult(BaseModel):
+    modality: str
+    confidence: float = Field(..., ge=0, le=100)
+    raw_label: Optional[str] = None
+
+
+class GradCAMInsights(BaseModel):
+    focus_region: str
+    focus_center: Dict[str, int]
+    high_activation_percentage: float
+    concentration_score: float
+    interpretation: str
 
 
 class AIAnalysisResult(BaseModel):
@@ -52,6 +68,9 @@ class AIAnalysisResult(BaseModel):
     recommendation: str
     explanation: str
     classifier: Optional[ClassifierResult] = None
+    modality: Optional[ModalityResult] = None
+    gradcam_image: Optional[str] = None
+    gradcam_insights: Optional[GradCAMInsights] = None
 
 
 class AIAnalysisRequest(BaseModel):

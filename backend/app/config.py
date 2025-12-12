@@ -19,6 +19,12 @@ class Settings(BaseSettings):
     ENABLE_CLASSIFIER: bool = True
     CLASSIFIER_WEIGHTS_PATH: str = "ml/best_weights_classifier.h5"
     CLASSIFIER_LABELS: list[str] = ["CNV", "DME", "DRUSEN", "NORMAL"]
+    FUNDUS_CLASSIFIER_WEIGHTS_PATH: str = "ml/MobileNetV2_custom.h5"
+    FUNDUS_CLASSIFIER_LABELS: list[str] = ["CNV", "DME", "DRUSEN", "NORMAL"]
+    ENABLE_MODALITY_DETECTOR: bool = True
+    MODALITY_CLASSIFIER_PATH: str = "ml/modality_classifier.pth"
+    OCT_GRADCAM_LAYER: str = "block5_conv3"
+    FUNDUS_GRADCAM_LAYER: str = "Conv_1"
     
     # CORS
     CORS_ORIGINS: list[str] = [

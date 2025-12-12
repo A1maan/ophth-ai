@@ -59,7 +59,7 @@ def load_modality_model() -> Tuple[nn.Module, Dict[int, str], torch.device]:
         raise FileNotFoundError(f"Modality classifier checkpoint not found at {checkpoint_path}")
     
     _device = _get_device()
-    print(f"🔄 Loading modality detector on {_device}...")
+    print(f"[modality] Loading modality detector on {_device}...")
     
     # Load checkpoint
     checkpoint = torch.load(str(checkpoint_path), map_location=_device)
@@ -80,7 +80,7 @@ def load_modality_model() -> Tuple[nn.Module, Dict[int, str], torch.device]:
     _idx_to_class = {v: k for k, v in class_to_idx.items()}
     _modality_model = model
     
-    print(f"✅ Modality detector loaded: {list(class_to_idx.keys())}")
+    print(f"[modality] Modality detector loaded: {list(class_to_idx.keys())}")
     return _modality_model, _idx_to_class, _device
 
 
@@ -140,7 +140,7 @@ def detect_modality(image: Image.Image) -> Dict:
             modality = "fundus"
         else:
             # Default to OCT if unknown
-            print(f"⚠️ Unknown modality '{raw_label}', defaulting to 'oct'")
+            print(f"[modality] Unknown modality '{raw_label}', defaulting to 'oct'")
             modality = "oct"
     
     return {

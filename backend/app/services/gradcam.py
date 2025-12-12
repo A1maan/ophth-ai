@@ -9,7 +9,7 @@ import io
 import base64
 import numpy as np
 from PIL import Image
-from typing import Optional, Tuple
+from typing import Callable, Optional, Tuple
 import tensorflow as tf
 
 from app.config import settings
@@ -128,12 +128,20 @@ def create_gradcam_overlay(
     return Image.fromarray(overlay)
 
 
+def _default_preprocess(image: Image.Image) -> np.ndarray:
+    """Fallback preprocessing if no classifier-specific function is provided."""
+    img = image.convert("RGB").resize((224, 224))
+    arr = np.array(img).astype("float32") / 255.0
+    return np.expand_dims(arr, axis=0)
+
+
 def generate_gradcam_for_image(
     image: Image.Image,
     model: Optional[tf.keras.Model] = None,
-    last_conv_layer_name: str = None,
+    preprocess_fn: Optional[Callable[[Image.Image], np.ndarray]] = None,
+    last_conv_layer_name: Optional[str] = None,
     alpha: float = 0.4,
-    classifier_type: str = None
+    classifier_type: Optional[str] = None
 ) -> Tuple[str, np.ndarray]:
     """
     Generate Grad-CAM visualization for an image using the classifier model.
@@ -141,6 +149,7 @@ def generate_gradcam_for_image(
     Args:
         image: PIL Image to analyze
         model: Optional pre-loaded model (if None, loads the classifier model)
+        preprocess_fn: Callable that prepares the image for the classifier
         last_conv_layer_name: Name of the last conv layer for Grad-CAM (auto-detected if None)
         alpha: Overlay transparency
         classifier_type: "oct" or "fundus" (default from settings if None)
@@ -148,23 +157,28 @@ def generate_gradcam_for_image(
     Returns:
         Tuple of (base64 encoded overlay image, raw heatmap array)
     """
-    from app.services.classifier import load_classifier_model, _preprocess_image
-    
-    # Load model if not provided
-    if model is None:
-        model, _, layer_name = load_classifier_model(classifier_type)
-        if last_conv_layer_name is None:
-            last_conv_layer_name = layer_name
-    
+    model_to_use = model
+    layer_name = last_conv_layer_name
+    preprocess = preprocess_fn or _default_preprocess
+
+    if model_to_use is None:
+        # Lazy-load classifier model if not provided (avoids circular import when called from classifier service)
+        from app.services.classifier import load_classifier_model, preprocess_image
+
+        model_to_use, default_layer = load_classifier_model(classifier_type or "oct")
+        layer_name = layer_name or default_layer
+        if preprocess_fn is None:
+            preprocess = lambda img: preprocess_image(img, classifier_type or "oct")
+
     # Use appropriate default layer if still not set
-    if last_conv_layer_name is None:
-        last_conv_layer_name = settings.OCT_GRADCAM_LAYER if classifier_type != "fundus" else settings.FUNDUS_GRADCAM_LAYER
-    
+    if layer_name is None:
+        layer_name = settings.OCT_GRADCAM_LAYER if classifier_type != "fundus" else settings.FUNDUS_GRADCAM_LAYER
+
     # Preprocess image
-    img_array = _preprocess_image(image)
-    
+    img_array = preprocess(image)
+
     # Compute Grad-CAM heatmap
-    heatmap = compute_gradcam(model, img_array, last_conv_layer_name)
+    heatmap = compute_gradcam(model_to_use, img_array, layer_name)
     
     # Create overlay image
     overlay = create_gradcam_overlay(image, heatmap, alpha)
@@ -211,7 +225,7 @@ def generate_gradcam_for_both(
                 "insights": insights
             }
         except Exception as e:
-            print(f"⚠️ Grad-CAM generation failed for {classifier_type}: {e}")
+            print(f"[gradcam] generation failed for {classifier_type}: {e}")
             results[classifier_type] = None
     
     return results
