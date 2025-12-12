@@ -10,8 +10,8 @@ import json
 import re
 import base64
 import io
-from typing import Optional
 from PIL import Image
+from app.config import settings
 
 # Global model instances (loaded once at startup)
 _model = None
@@ -142,24 +142,44 @@ async def analyze_eye_image(image_data: str) -> dict:
     
     # Decode the image
     image = decode_base64_image(image_data)
+
+    # Run auxiliary VGG16 classifier for context (best-effort).
+    classifier_result = None
+    classifier_context = ""
+    if settings.ENABLE_CLASSIFIER:
+        try:
+            from app.services.classifier import classify_image, format_classifier_context
+
+            classifier_result = classify_image(image)
+            classifier_context = format_classifier_context(classifier_result)
+        except Exception as cls_error:
+            classifier_context = (
+                "Auxiliary classifier could not run for this image; "
+                f"proceed with visual analysis only. Error: {cls_error}"
+            )
+            print(f"Classifier inference error: {cls_error}")
     
     # Save temporarily to create proper message format
     # OctoMed expects image path or URL, so we'll use PIL image directly
     
     # Create the analysis prompt
-    prompt = """You are an expert AI ophthalmology assistant specialized in analyzing eye and retinal images.
-
-Analyze this medical eye scan/image/cross-sectional OCT angiography (OCTA) B-scan of the retina and provide a detailed structured report.
-
-Respond with a JSON object containing:
-1. "classification": The primary diagnosis or condition (e.g., "Diabetic Retinopathy", "Glaucoma Suspect", "Normal", etc.)
-2. "confidence": A number from 0 to 100 indicating certainty
-3. "findings": An array of specific observations from the image
-4. "recommendation": A clear recommendation for the ophthalmologist
-5. "explanation": A detailed explanation on how you arrived at the classification and key findings.
-
-Respond ONLY with valid JSON in this exact format:
-{"classification": "string", "confidence": number, "findings": ["string"], "recommendation": "string", "explanation": "string"}"""
+    prompt_parts = [
+        "You are an expert AI ophthalmology assistant specialized in analyzing eye and retinal images.",
+        "Auxiliary context from a separate VGG16 OCT classifier (use as a hint but verify visually):",
+        classifier_context or "No auxiliary classifier output is available for this image.",
+        "",
+        "Analyze this medical eye scan/image/cross-sectional OCT angiography (OCTA) B-scan of the retina and provide a detailed structured report.",
+        "Respond with a JSON object containing:",
+        '1. "classification": The primary diagnosis or condition (e.g., "Diabetic Retinopathy", "Glaucoma Suspect", "Normal", etc.)',
+        '2. "confidence": A number from 0 to 100 indicating certainty',
+        '3. "findings": An array of specific observations from the image',
+        '4. "recommendation": A clear recommendation for the ophthalmologist',
+        '5. "explanation": A detailed explanation on how you arrived at the classification and key findings.',
+        "",
+        "Respond ONLY with valid JSON in this exact format:",
+        '{"classification": "string", "confidence": number, "findings": ["string"], "recommendation": "string", "explanation": "string"}',
+    ]
+    prompt = "\n".join(prompt_parts)
 
     # Create message in OctoMed format
     messages = [
@@ -207,6 +227,10 @@ Respond ONLY with valid JSON in this exact format:
         
         # Parse JSON response
         result = parse_model_response(output_text)
+
+        # Attach classifier context to response for transparency
+        if classifier_result:
+            result["classifier"] = classifier_result
         
         return result
         

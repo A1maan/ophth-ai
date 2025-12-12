@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Optional, List, Dict
 from datetime import datetime
 from enum import Enum
 
@@ -39,12 +39,19 @@ class OculomicsData(BaseModel):
 
 
 # AI Analysis Schemas
+class ClassifierResult(BaseModel):
+    label: str
+    confidence: float = Field(..., ge=0, le=100)
+    probabilities: Dict[str, float]
+
+
 class AIAnalysisResult(BaseModel):
     classification: str
     confidence: float = Field(..., ge=0, le=100)
     findings: List[str]
     recommendation: str
     explanation: str
+    classifier: Optional[ClassifierResult] = None
 
 
 class AIAnalysisRequest(BaseModel):

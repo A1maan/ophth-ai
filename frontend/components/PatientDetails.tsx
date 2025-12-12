@@ -309,7 +309,7 @@ const PatientDetails = () => {
             <div className="aspect-square bg-slate-900 rounded-lg overflow-hidden relative group mb-4">
               {imagePreview ? (
                 <>
-                  <img src={imagePreview} alt="Scan" className="w-full h-full object-cover transition-opacity" />
+                  <img src={imagePreview} alt="Scan" className="w-full h-full object-fill transition-opacity" />
                   
                   {/* Grad-CAM Simulation Overlay */}
                   {viewMode === 'heatmap' && (

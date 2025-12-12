@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     # AI Model Settings
     MODEL_NAME: str = "OctoMed/OctoMed-7B"
     LOAD_MODEL_ON_STARTUP: bool = True  # Set to False to lazy load
+    ENABLE_CLASSIFIER: bool = True
+    CLASSIFIER_WEIGHTS_PATH: str = "ml/best_weights_classifier.h5"
+    CLASSIFIER_LABELS: list[str] = ["CNV", "DME", "DRUSEN", "NORMAL"]
     
     # CORS
     CORS_ORIGINS: list[str] = [
@@ -37,4 +40,3 @@ def get_settings() -> Settings:
 
 
 settings = get_settings()
-
