@@ -241,3 +241,66 @@ async def schedule_appointment(
     db.refresh(patient)
     
     return patient_to_camel(patient)
+
+
+@router.post("/{patient_id}/reset-analysis", response_model=PatientResponseCamel)
+async def reset_patient_analysis(patient_id: str, db: Session = Depends(get_db)):
+    """
+    Reset a patient's analysis state for re-scanning (Demo Mode).
+    This clears the AI analysis and resets workflow_step to 1.
+    """
+    from app.config import settings
+    
+    if not settings.DEMO_MODE:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Reset analysis is only available in demo mode"
+        )
+    
+    patient = db.query(Patient).filter(Patient.id == patient_id).first()
+    if not patient:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Patient with id {patient_id} not found"
+        )
+    
+    # Reset analysis state
+    patient.ai_analysis = None
+    patient.validation_status = None
+    patient.workflow_step = 1
+    patient.updated_at = datetime.utcnow()
+    
+    db.commit()
+    db.refresh(patient)
+    
+    return patient_to_camel(patient)
+
+
+@router.post("/reset-all-analysis", response_model=MessageResponse)
+async def reset_all_analysis(db: Session = Depends(get_db)):
+    """
+    Reset all patients' analysis state for re-scanning (Demo Mode).
+    This clears AI analysis and resets workflow_step to 1 for all patients.
+    """
+    from app.config import settings
+    
+    if not settings.DEMO_MODE:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Reset analysis is only available in demo mode"
+        )
+    
+    # Reset all patients
+    patients = db.query(Patient).all()
+    count = 0
+    for patient in patients:
+        if patient.workflow_step != 1 or patient.ai_analysis:
+            patient.ai_analysis = None
+            patient.validation_status = None
+            patient.workflow_step = 1
+            patient.updated_at = datetime.utcnow()
+            count += 1
+    
+    db.commit()
+    
+    return MessageResponse(message=f"Reset {count} patient(s) for re-analysis")
