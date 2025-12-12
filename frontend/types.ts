@@ -47,4 +47,9 @@ export interface Notification {
   timestamp: Date;
   read: boolean;
   type: 'info' | 'critical' | 'success';
+  source?: string;
+  label?: string;
+  confidence?: number;
+  probabilities?: Record<string, number>;
+  imageData?: string;
 }

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
 from typing import List
 
@@ -9,6 +9,7 @@ from app.schemas.schemas import (
     NotificationResponseCamel,
     MessageResponse
 )
+from app.services.realtime import notification_manager
 
 router = APIRouter()
 
@@ -66,8 +67,16 @@ async def create_notification(
     db.add(notification)
     db.commit()
     db.refresh(notification)
+
+    response = notification_to_camel(notification)
+
+    # Push to any live WebSocket subscribers for real-time UI updates
+    await notification_manager.broadcast({
+        "event": "notification",
+        "data": response
+    })
     
-    return notification_to_camel(notification)
+    return response
 
 
 @router.patch("/{notification_id}/read")
@@ -94,6 +103,18 @@ async def mark_all_notifications_read(db: Session = Depends(get_db)):
     db.commit()
     
     return MessageResponse(message="All notifications marked as read")
+
+
+@router.websocket("/ws")
+async def notifications_ws(websocket: WebSocket):
+    """WebSocket endpoint for streaming notifications to the frontend."""
+    await notification_manager.connect(websocket)
+    try:
+        # Keep the connection alive; backend pushes events as they occur.
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        notification_manager.disconnect(websocket)
 
 
 @router.delete("/{notification_id}", response_model=MessageResponse)

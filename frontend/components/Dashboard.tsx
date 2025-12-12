@@ -6,7 +6,8 @@ import {
   AlertTriangle, 
   Clock, 
   Search,
-  ChevronRight
+  ChevronRight,
+  Bell
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { 
@@ -46,11 +47,15 @@ const StatCard = ({ title, value, icon: Icon, color, trend }: any) => (
 );
 
 const Dashboard = () => {
-  const { patients } = useDashboard();
+  const { patients, notifications } = useDashboard();
   const navigate = useNavigate();
 
   const criticalCount = patients.filter(p => p.status === CaseStatus.CRITICAL).length;
   const pendingCount = patients.filter(p => p.status === CaseStatus.PENDING).length;
+  const liveAlerts = (
+    notifications.filter(n => n.type === 'critical')
+      .concat(notifications.filter(n => n.type !== 'critical'))
+  ).slice(0, 4);
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
@@ -175,6 +180,37 @@ const Dashboard = () => {
                 <Area type="monotone" dataKey="cases" stroke="#6366f1" strokeWidth={3} fillOpacity={1} fill="url(#colorCases)" />
               </AreaChart>
             </ResponsiveContainer>
+          </div>
+          <div className="mt-6 border-t border-slate-100 pt-4">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-red-500" />
+                <span className="font-semibold text-slate-800">Live Alerts</span>
+              </div>
+              <span className="text-xs text-slate-500">
+                {liveAlerts.length ? 'Streaming from classifier' : 'No alerts yet'}
+              </span>
+            </div>
+            <div className="space-y-3">
+              {liveAlerts.length === 0 ? (
+                <div className="p-3 bg-slate-50 rounded-lg text-xs text-slate-500 flex items-center gap-2">
+                  <Bell className="w-4 h-4 text-slate-400" />
+                  Waiting for new notifications...
+                </div>
+              ) : (
+                liveAlerts.map((notif) => (
+                  <div 
+                    key={notif.id} 
+                    className={`p-3 rounded-lg border text-sm ${notif.type === 'critical' ? 'border-red-100 bg-red-50 text-red-800' : 'border-slate-100 bg-slate-50 text-slate-700'}`}
+                  >
+                    <p className="font-semibold">{notif.message}</p>
+                    <p className="text-xs text-slate-500 mt-1">
+                      {notif.patientId} • {new Date(notif.timestamp).toLocaleTimeString()}
+                    </p>
+                  </div>
+                ))
+              )}
+            </div>
           </div>
         </div>
       </div>

@@ -31,7 +31,7 @@ import {
 const PatientDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { getPatientById, updatePatient } = useDashboard();
+  const { getPatientById, updatePatient, autoAnalyzePatientId, clearAutoAnalyze } = useDashboard();
   
   // Local state for analysis process
   const [analyzing, setAnalyzing] = useState(false);
@@ -85,7 +85,10 @@ const PatientDetails = () => {
   };
 
   const handleAnalyze = async () => {
-    if (!imagePreview) return;
+    if (!imagePreview) {
+      setError("No image available to analyze. Please upload a scan first.");
+      return;
+    }
     setAnalyzing(true);
     setError(null);
     try {
@@ -115,6 +118,24 @@ const PatientDetails = () => {
       setAnalyzing(false);
     }
   };
+
+  // If a notification requests an auto-analysis, trigger it once when we land here.
+  useEffect(() => {
+    if (!patient) return;
+    const shouldAutoAnalyze = autoAnalyzePatientId === patient.id && !analysisResult && !analyzing;
+    if (!shouldAutoAnalyze) return;
+    if (!imagePreview) {
+      setError("Incoming alert has no image attached. Please upload one to analyze.");
+      clearAutoAnalyze();
+      return;
+    }
+
+    const run = async () => {
+      await handleAnalyze();
+      clearAutoAnalyze();
+    };
+    run();
+  }, [autoAnalyzePatientId, patient?.id, analysisResult, analyzing, clearAutoAnalyze, imagePreview]);
 
   const handleValidation = (status: 'approved' | 'rejected') => {
     updatePatient(patient.id, {

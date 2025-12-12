@@ -9,13 +9,14 @@ interface Props {
 }
 
 const NotificationDropdown: React.FC<Props> = ({ isOpen, onClose }) => {
-  const { notifications, markNotificationRead } = useDashboard();
+  const { notifications, markNotificationRead, requestAutoAnalyze } = useDashboard();
   const navigate = useNavigate();
 
   if (!isOpen) return null;
 
   const handleClick = (notif: any) => {
     markNotificationRead(notif.id);
+    requestAutoAnalyze(notif.patientId);
     navigate(`/patient/${notif.patientId}`);
     onClose();
   };
@@ -53,6 +54,20 @@ const NotificationDropdown: React.FC<Props> = ({ isOpen, onClose }) => {
                   <p className={`text-sm ${!notif.read ? 'font-semibold text-slate-800' : 'text-slate-600'}`}>
                     {notif.message}
                   </p>
+                  {notif.confidence !== undefined && notif.label && (
+                    <p className="text-xs text-slate-500 mt-1">
+                      {notif.label} • {notif.confidence.toFixed(1)}% confidence
+                    </p>
+                  )}
+                  {notif.probabilities && (
+                    <p className="text-[11px] text-slate-500 mt-1">
+                      {Object.entries(notif.probabilities)
+                        .sort((a, b) => Number(b[1]) - Number(a[1]))
+                        .slice(0, 3)
+                        .map(([k, v]) => `${k}:${Number(v).toFixed(1)}%`)
+                        .join(' · ')}
+                    </p>
+                  )}
                   <p className="text-xs text-slate-400 mt-1">
                     {new Date(notif.timestamp).toLocaleTimeString()}
                   </p>
