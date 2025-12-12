@@ -61,6 +61,16 @@ class GradCAMInsights(BaseModel):
     interpretation: str
 
 
+class CouncilVote(BaseModel):
+    model: str
+    classification: Optional[str] = None
+    confidence: Optional[float] = Field(None, ge=0, le=100)
+    findings: Optional[List[str]] = None
+    recommendation: Optional[str] = None
+    explanation: Optional[str] = None
+    source: Optional[str] = None
+
+
 class AIAnalysisResult(BaseModel):
     classification: str
     confidence: float = Field(..., ge=0, le=100)
@@ -71,6 +81,7 @@ class AIAnalysisResult(BaseModel):
     modality: Optional[ModalityResult] = None
     gradcam_image: Optional[str] = None
     gradcam_insights: Optional[GradCAMInsights] = None
+    council_votes: Optional[List[CouncilVote]] = None
 
 
 class AIAnalysisRequest(BaseModel):

@@ -10,6 +10,7 @@ import json
 import re
 import base64
 import io
+from typing import Any, Dict, List, Optional
 from PIL import Image
 from app.config import settings
 
@@ -40,7 +41,7 @@ def load_model():
     
     from transformers import Qwen2_5_VLForConditionalGeneration, AutoProcessor
     
-    print("🔄 Loading OctoMed-7B model...")
+    print("Loading OctoMed-7B model...")
     
     _device = get_device()
     print(f"   Using device: {_device}")
@@ -71,7 +72,7 @@ def load_model():
         max_pixels=max_pixels
     )
     
-    print("✅ OctoMed-7B model loaded successfully")
+    print("OctoMed-7B model loaded successfully")
 
 
 def is_model_loaded() -> bool:
@@ -94,7 +95,7 @@ def unload_model():
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
     
-    print("🗑️ OctoMed model unloaded")
+    print("OctoMed model unloaded")
 
 
 def decode_base64_image(image_data: str) -> Image.Image:
@@ -123,6 +124,210 @@ def decode_base64_image(image_data: str) -> Image.Image:
     return image
 
 
+def _strip_think_tokens(text: str) -> str:
+    """Remove <think>...</think> reasoning blocks from model outputs."""
+    if not text:
+        return text
+    cleaned = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL | re.IGNORECASE)
+    cleaned = re.sub(r"</?think>", "", cleaned, flags=re.IGNORECASE)
+    return cleaned.strip()
+
+
+def _generate_octomed_response(
+    messages: List[Dict[str, Any]], max_new_tokens: int = 512
+) -> str:
+    """
+    Run the loaded OctoMed model against a chat-style prompt.
+    
+    Supports both multimodal (image+text) and text-only messages, depending on
+    the provided message content.
+    """
+    if not is_model_loaded():
+        raise RuntimeError("OctoMed model is not loaded. Call load_model() first.")
+
+    from qwen_vl_utils import process_vision_info
+
+    text = _processor.apply_chat_template(
+        messages, tokenize=False, add_generation_prompt=True
+    )
+    image_inputs, video_inputs = process_vision_info(messages)
+
+    inputs = _processor(
+        text=[text],
+        images=image_inputs,
+        videos=video_inputs,
+        padding=False,
+        return_tensors="pt",
+    )
+    inputs = inputs.to(device=_device)
+
+    with torch.no_grad():
+        generated_ids = _model.generate(**inputs, max_new_tokens=max_new_tokens)
+
+    generated_ids_trimmed = [
+        out_ids[len(in_ids):]
+        for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
+    ]
+    output_text = _processor.batch_decode(
+        generated_ids_trimmed,
+        skip_special_tokens=True,
+        clean_up_tokenization_spaces=False,
+    )[0]
+
+    return _strip_think_tokens(output_text)
+
+
+def _summarize_gradcam(gradcam_insights: Optional[Dict[str, Any]]) -> str:
+    """Convert Grad-CAM insight dict to a short, human-readable sentence."""
+    if not gradcam_insights:
+        return "Grad-CAM focus map not available."
+
+    focus_region = gradcam_insights.get("focus_region", "an unspecified region")
+    center = gradcam_insights.get("focus_center", {})
+    coverage = gradcam_insights.get("high_activation_percentage")
+    concentration = gradcam_insights.get("concentration_score")
+    interpretation = gradcam_insights.get("interpretation")
+
+    center_text = ""
+    if isinstance(center, dict) and "x" in center and "y" in center:
+        center_text = f" near coordinates ({center.get('x')}, {center.get('y')})"
+
+    extras = []
+    if coverage is not None:
+        extras.append(f"hot area covers ~{coverage}% of the image")
+    if concentration is not None:
+        extras.append(f"attention concentration score {concentration}")
+
+    parts = [f"Grad-CAM highlights the {focus_region}{center_text}."]
+    if extras:
+        parts.append("; ".join(extras) + ".")
+    if interpretation:
+        parts.append(str(interpretation))
+    return " ".join(parts)
+
+
+def _format_vote_for_prompt(vote: Dict[str, Any]) -> str:
+    """Compact a vote dict into a single prompt-friendly line."""
+    findings = vote.get("findings") or []
+    findings_text = ""
+    if isinstance(findings, list):
+        findings_text = ", ".join(str(item) for item in findings if item)
+    else:
+        findings_text = str(findings)
+
+    explanation = str(vote.get("explanation", "")).replace("\n", " ").strip()
+
+    return (
+        f"{vote.get('model', 'LLM')} -> classification: "
+        f"{vote.get('classification', 'Unknown')} "
+        f"({vote.get('confidence', 'n/a')}% confidence); "
+        f"findings: {findings_text or 'n/a'}; "
+        f"recommendation: {vote.get('recommendation', 'n/a')}; "
+        f"explanation: {explanation or 'n/a'}"
+    )
+
+
+async def _run_llm_council(
+    image_data: str,
+    initial_result: Dict[str, Any],
+    classifier_context: str,
+    modality_text: str,
+    gradcam_insights: Optional[Dict[str, Any]],
+) -> tuple[str, List[Dict[str, Any]]]:
+    """
+    Convene a small council of LLMs (OctoMed + optional Gemini + OctoMed reviewer)
+    to refine the final explanation.
+    """
+    votes: List[Dict[str, Any]] = [
+        {
+            "model": "OctoMed-7B",
+            "classification": initial_result.get("classification"),
+            "confidence": initial_result.get("confidence"),
+            "findings": initial_result.get("findings"),
+            "recommendation": initial_result.get("recommendation"),
+            "explanation": initial_result.get("explanation"),
+            "source": "vision-primary",
+        }
+    ]
+
+    # Optional cross-check with Med-Gemma if enabled
+    if getattr(settings, "ENABLE_MEDGEMMA_CROSSCHECK", False):
+        try:
+            from app.services.medgemma import analyze_eye_image as analyze_with_medgemma
+
+            med_vote = await analyze_with_medgemma(image_data)
+            med_vote["model"] = med_vote.get("model", settings.MEDGEMMA_MODEL_NAME)
+            med_vote["source"] = "cross-check"
+            votes.append(med_vote)
+        except Exception as exc:
+            print(f"[council] Med-Gemma vote failed: {exc}")
+
+    reviewer_prompt_parts = [
+        "You are an independent ophthalmology LLM reviewing another model's report.",
+        f"Proposed classification: {initial_result.get('classification')} "
+        f"({initial_result.get('confidence')}% confidence).",
+        f"Findings: {', '.join(initial_result.get('findings', [])) or 'n/a'}",
+        f"Recommendation: {initial_result.get('recommendation')}",
+        f"Modality cue: {modality_text}",
+        f"Auxiliary classifier hint: {classifier_context}",
+    ]
+    if gradcam_insights:
+        reviewer_prompt_parts.append(_summarize_gradcam(gradcam_insights))
+    reviewer_prompt_parts.append(
+        "Provide a short second-opinion explanation (<=120 words) noting agreement "
+        "or disagreements and any safety flags."
+    )
+
+    reviewer_messages = [
+        {"role": "user", "content": [{"type": "text", "text": "\n".join(reviewer_prompt_parts)}]}
+    ]
+    try:
+        reviewer_explanation = _generate_octomed_response(reviewer_messages, max_new_tokens=384)
+        votes.append(
+            {
+                "model": "OctoMed-Reviewer",
+                "classification": initial_result.get("classification"),
+                "confidence": initial_result.get("confidence"),
+                "findings": initial_result.get("findings"),
+                "recommendation": initial_result.get("recommendation"),
+                "explanation": reviewer_explanation,
+                "source": "text-review",
+            }
+        )
+    except Exception as exc:
+        print(f"[council] Reviewer generation failed: {exc}")
+
+    vote_lines = "\n".join(_format_vote_for_prompt(vote) for vote in votes)
+    council_prompt_parts = [
+        "You are coordinating a council of ophthalmology LLMs.",
+        "Combine their perspectives into one clear final explanation for a clinician.",
+        modality_text,
+        f"Auxiliary classifier context: {classifier_context}",
+        _summarize_gradcam(gradcam_insights),
+        "Council opinions:",
+        vote_lines,
+        (
+            "Produce one concise explanation (<=150 words) describing the reasoning, where the "
+            "council agrees or diverges, and why the final stance was chosen. Avoid JSON; "
+            "return prose only."
+        ),
+    ]
+    council_messages = [
+        {"role": "user", "content": [{"type": "text", "text": "\n".join(council_prompt_parts)}]}
+    ]
+
+    try:
+        consensus = _generate_octomed_response(council_messages, max_new_tokens=448)
+        final_explanation = _strip_think_tokens(consensus) or initial_result.get(
+            "explanation", ""
+        )
+    except Exception as exc:
+        print(f"[council] Consensus generation failed: {exc}")
+        final_explanation = initial_result.get("explanation", "")
+
+    return final_explanation.strip(), votes
+
+
 async def analyze_eye_image(image_data: str) -> dict:
     """
     Analyze an eye/medical image using OctoMed-7B model.
@@ -137,9 +342,7 @@ async def analyze_eye_image(image_data: str) -> dict:
     
     if not is_model_loaded():
         raise RuntimeError("OctoMed model is not loaded. Call load_model() first.")
-    
-    from qwen_vl_utils import process_vision_info
-    
+
     # Decode the image
     image = decode_base64_image(image_data)
 
@@ -168,7 +371,7 @@ async def analyze_eye_image(image_data: str) -> dict:
             f"proceed with visual analysis only. Error: {cls_error}"
         )
         print(f"Classifier inference error: {cls_error}")
-    
+
     modality_text = (
         f"Imaging modality detected: {modality_result.get('modality')} "
         f"({modality_result.get('confidence', 0):.1f}% confidence)."
@@ -176,9 +379,6 @@ async def analyze_eye_image(image_data: str) -> dict:
         else "Imaging modality not detected automatically; interpret using standard retinal imaging best practices."
     )
 
-    # Save temporarily to create proper message format
-    # OctoMed expects image path or URL, so we'll use PIL image directly
-    
     # Create the analysis prompt
     prompt_parts = [
         "You are an expert AI ophthalmology assistant specialized in analyzing eye and retinal images.",
@@ -189,7 +389,7 @@ async def analyze_eye_image(image_data: str) -> dict:
         "Analyze this ophthalmic scan (OCT B-scan, OCTA, or fundus photo) and provide a detailed structured report.",
         "Respond with a JSON object containing:",
         '1. "classification": The primary diagnosis or condition (e.g., "Diabetic Retinopathy", "Glaucoma Suspect", "Normal", etc.). Please also consider the results from the auxiliary classifier above.',
-        '2. "confidence": Hightest Probability from the classifier context.',
+        '2. "confidence": Highest probability you infer from the classifier context or visual evidence.',
         '3. "findings": An array of specific observations from the image',
         '4. "recommendation": A clear recommendation for the ophthalmologist',
         '5. "explanation": A detailed explanation on how you arrived at the classification and key findings.',
@@ -209,41 +409,9 @@ async def analyze_eye_image(image_data: str) -> dict:
             ],
         }
     ]
-    
+
     try:
-        # Prepare inputs
-        text = _processor.apply_chat_template(
-            messages, tokenize=False, add_generation_prompt=True
-        )
-        image_inputs, video_inputs = process_vision_info(messages)
-        
-        inputs = _processor(
-            text=[text],
-            images=image_inputs,
-            videos=video_inputs,
-            padding=False,
-            return_tensors="pt",
-        )
-        
-        # Move inputs to device
-        inputs = inputs.to(device=_device)
-        
-        # Generate response
-        with torch.no_grad():
-            generated_ids = _model.generate(**inputs, max_new_tokens=2048)
-        
-        # Decode output
-        generated_ids_trimmed = [
-            out_ids[len(in_ids):] 
-            for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
-        ]
-        output_text = _processor.batch_decode(
-            generated_ids_trimmed, 
-            skip_special_tokens=True, 
-            clean_up_tokenization_spaces=False
-        )[0]
-        
-        # Parse JSON response
+        output_text = _generate_octomed_response(messages, max_new_tokens=2048)
         result = parse_model_response(output_text)
 
         # Attach classifier context to response for transparency
@@ -255,9 +423,24 @@ async def analyze_eye_image(image_data: str) -> dict:
             result["gradcam_image"] = gradcam_image
         if gradcam_insights:
             result["gradcam_insights"] = gradcam_insights
-        
+
+        # Council of LLMs to refine the explanation (optional)
+        if settings.ENABLE_LLM_COUNCIL:
+            try:
+                explanation, votes = await _run_llm_council(
+                    image_data=image_data,
+                    initial_result=result,
+                    classifier_context=classifier_context,
+                    modality_text=modality_text,
+                    gradcam_insights=gradcam_insights,
+                )
+                result["explanation"] = explanation
+                result["council_votes"] = votes
+            except Exception as council_error:
+                print(f"[council] Deliberation failed: {council_error}")
+
         return result
-        
+
     except Exception as e:
         print(f"OctoMed analysis error: {e}")
         raise
@@ -273,6 +456,7 @@ def parse_model_response(response_text: str) -> dict:
     Returns:
         Dictionary with analysis results
     """
+    response_text = _strip_think_tokens(response_text)
     # Clean up response text
     response_text = response_text.strip()
     

@@ -27,6 +27,16 @@ export interface GradCAMInsights {
   interpretation: string;
 }
 
+export interface CouncilVote {
+  model: string;
+  classification?: string;
+  confidence?: number;
+  findings?: string[];
+  recommendation?: string;
+  explanation?: string;
+  source?: string;
+}
+
 export interface AIAnalysisResult {
   classification: string;
   confidence: number;
@@ -37,6 +47,7 @@ export interface AIAnalysisResult {
   modality?: ModalityResult;
   gradcam_image?: string;
   gradcam_insights?: GradCAMInsights;
+  council_votes?: CouncilVote[];
 }
 
 export interface OculomicsData {
