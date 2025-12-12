@@ -20,7 +20,17 @@ class Settings(BaseSettings):
     CLASSIFIER_WEIGHTS_PATH: str = "ml/best_weights_classifier.h5"
     CLASSIFIER_LABELS: list[str] = ["CNV", "DME", "DRUSEN", "NORMAL"]
     FUNDUS_CLASSIFIER_WEIGHTS_PATH: str = "ml/MobileNetV2_custom.h5"
-    FUNDUS_CLASSIFIER_LABELS: list[str] = ["CNV", "DME", "DRUSEN", "NORMAL"]
+    # Default to the eight-class fundus set used during training (aligns with MobileNetV2_custom.h5)
+    FUNDUS_CLASSIFIER_LABELS: list[str] = [
+        "AMD",
+        "CATARACT",
+        "DIABETIC_RETINOPATHY",
+        "GLAUCOMA",
+        "HYPERTENSION",
+        "MYOPIA",
+        "NORMAL",
+        "OTHERS",
+    ]
     ENABLE_MODALITY_DETECTOR: bool = True
     MODALITY_CLASSIFIER_PATH: str = "ml/modality_classifier.pth"
     OCT_GRADCAM_LAYER: str = "block5_conv3"

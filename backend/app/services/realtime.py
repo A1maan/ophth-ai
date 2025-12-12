@@ -68,7 +68,11 @@ async def classifier_watch_loop(poll_interval: float = 5.0) -> None:
 
     while True:
         try:
-            for image_path in scans_dir.glob("*.bmp"):
+            for image_path in scans_dir.glob("*"):
+                suffix = image_path.suffix.lower()
+                if suffix not in {".bmp", ".png", ".jpg", ".jpeg"}:
+                    continue
+
                 mtime = image_path.stat().st_mtime
                 if processed.get(image_path.name) == mtime:
                     continue  # Skip files we've already handled
@@ -76,17 +80,26 @@ async def classifier_watch_loop(poll_interval: float = 5.0) -> None:
                 processed[image_path.name] = mtime
 
                 if not settings.ENABLE_CLASSIFIER:
+                    print("[realtime] Classifier disabled; skipping notification workflow")
                     continue
 
                 with Image.open(image_path) as img:
                     # Run classifier in a thread to avoid blocking the loop.
-                    result = await asyncio.to_thread(classify_image, img.copy())
+                    # Use auto type selection to route fundus vs OCT.
+                    result = await asyncio.to_thread(
+                        classify_image, img.copy(), "auto"
+                    )
 
                 if not result:
+                    print(f"[realtime] No classifier result for {image_path.name}")
                     continue
 
                 label = str(result.get("label", "")).lower()
                 is_normal = label == "normal"
+                print(
+                    f"[realtime] Classified {image_path.name} -> {result.get('label')} "
+                    f"({result.get('confidence', 0):.1f}%, type={result.get('classifier_type')})"
+                )
 
                 if not is_normal:
                     timestamp = datetime.utcnow().isoformat()
@@ -112,6 +125,8 @@ async def classifier_watch_loop(poll_interval: float = 5.0) -> None:
                         {"event": "abnormal_scan", "data": payload}
                     )
                     print(f"[realtime] Broadcast abnormal scan alert for {image_path.name}")
+                else:
+                    print(f"[realtime] {image_path.name} predicted NORMAL; no notification sent")
 
         except asyncio.CancelledError:
             print("[realtime] Classifier watcher cancelled, shutting down.")

@@ -189,7 +189,7 @@ async def analyze_eye_image(image_data: str) -> dict:
         "Analyze this ophthalmic scan (OCT B-scan, OCTA, or fundus photo) and provide a detailed structured report.",
         "Respond with a JSON object containing:",
         '1. "classification": The primary diagnosis or condition (e.g., "Diabetic Retinopathy", "Glaucoma Suspect", "Normal", etc.). Please also consider the results from the auxiliary classifier above.',
-        '2. "confidence": A number from 0 to 100 indicating certainty (you may reference the auxiliary classifier confidence but rely on visual evidence).',
+        '2. "confidence": Hightest Probability from the classifier context.',
         '3. "findings": An array of specific observations from the image',
         '4. "recommendation": A clear recommendation for the ophthalmologist',
         '5. "explanation": A detailed explanation on how you arrived at the classification and key findings.',
