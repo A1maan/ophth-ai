@@ -108,7 +108,7 @@ def decode_base64_image(image_data: str) -> Image.Image:
         PIL Image object
     """
     # Remove data URL prefix if present
-    clean_base64 = re.sub(r'^data:image/(png|jpeg|jpg|webp);base64,', '', image_data)
+    clean_base64 = re.sub(r'^data:image/(png|jpeg|jpg|webp|bmp);base64,', '', image_data)
     
     # Decode base64
     image_bytes = base64.b64decode(clean_base64)
@@ -149,16 +149,14 @@ async def analyze_eye_image(image_data: str) -> dict:
     # Create the analysis prompt
     prompt = """You are an expert AI ophthalmology assistant specialized in analyzing eye and retinal images.
 
-Analyze this medical eye scan/image and provide a detailed structured report.
+Analyze this medical eye scan/image/cross-sectional OCT angiography (OCTA) B-scan of the retina and provide a detailed structured report.
 
 Respond with a JSON object containing:
 1. "classification": The primary diagnosis or condition (e.g., "Diabetic Retinopathy", "Glaucoma Suspect", "Normal", etc.)
 2. "confidence": A number from 0 to 100 indicating certainty
 3. "findings": An array of specific observations from the image
 4. "recommendation": A clear recommendation for the ophthalmologist
-5. "explanation": A detailed explanation of your observations
-
-If this is not an eye/medical image, set classification to "Invalid Image - Not an Eye Scan".
+5. "explanation": A detailed explanation on how you arrived at the classification and key findings.
 
 Respond ONLY with valid JSON in this exact format:
 {"classification": "string", "confidence": number, "findings": ["string"], "recommendation": "string", "explanation": "string"}"""
@@ -185,7 +183,7 @@ Respond ONLY with valid JSON in this exact format:
             text=[text],
             images=image_inputs,
             videos=video_inputs,
-            padding=True,
+            padding=False,
             return_tensors="pt",
         )
         
