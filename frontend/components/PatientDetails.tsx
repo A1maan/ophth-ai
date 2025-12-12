@@ -309,10 +309,19 @@ const PatientDetails = () => {
             <div className="aspect-square bg-slate-900 rounded-lg overflow-hidden relative group mb-4">
               {imagePreview ? (
                 <>
-                  <img src={imagePreview} alt="Scan" className="w-full h-full object-fill transition-opacity" />
+                  {/* Show original or Grad-CAM overlay based on view mode */}
+                  {viewMode === 'heatmap' && analysisResult?.gradcamImage ? (
+                    <img 
+                      src={analysisResult.gradcamImage} 
+                      alt="Grad-CAM Analysis" 
+                      className="w-full h-full object-fill transition-opacity animate-in fade-in duration-500" 
+                    />
+                  ) : (
+                    <img src={imagePreview} alt="Scan" className="w-full h-full object-fill transition-opacity" />
+                  )}
                   
-                  {/* Grad-CAM Simulation Overlay */}
-                  {viewMode === 'heatmap' && (
+                  {/* Fallback simulated Grad-CAM overlay if no real one available */}
+                  {viewMode === 'heatmap' && !analysisResult?.gradcamImage && analysisResult && (
                     <div 
                       className="absolute inset-0 opacity-60 mix-blend-overlay pointer-events-none animate-in fade-in duration-700"
                       style={{
@@ -323,17 +332,25 @@ const PatientDetails = () => {
                   )}
                   
                   {/* Heatmap Legend */}
-                  {viewMode === 'heatmap' && (
+                  {viewMode === 'heatmap' && analysisResult && (
                      <div className="absolute bottom-4 left-4 right-4 bg-black/70 backdrop-blur-md rounded-lg p-3 text-white pointer-events-none animate-in slide-in-from-bottom-2">
                        <p className="text-xs font-semibold mb-1 flex items-center gap-1.5">
                          <Activity className="w-3 h-3 text-red-400" />
-                         AI Focus Areas
+                         {analysisResult.gradcamInsights 
+                           ? `AI Focus: ${analysisResult.gradcamInsights.focus_region.replace('-', ' ')}`
+                           : 'AI Focus Areas'
+                         }
                        </p>
                        <div className="h-1.5 w-full bg-gradient-to-r from-blue-500 via-green-500 via-yellow-500 to-red-500 rounded-full"></div>
                        <div className="flex justify-between text-[10px] mt-1 text-slate-300">
-                         <span>Low Confidence</span>
+                         <span>Low Attention</span>
                          <span>High Attention</span>
                        </div>
+                       {analysisResult.gradcamInsights && (
+                         <p className="text-[10px] mt-2 text-slate-300 leading-relaxed">
+                           {analysisResult.gradcamInsights.interpretation}
+                         </p>
+                       )}
                      </div>
                   )}
 

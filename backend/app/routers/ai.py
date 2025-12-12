@@ -1,17 +1,25 @@
-from fastapi import APIRouter, HTTPException, UploadFile, File, status
+from fastapi import APIRouter, HTTPException, UploadFile, File, Query, status
 from app.schemas.schemas import AIAnalysisRequest, AIAnalysisResult
 from app.services.octomed import analyze_eye_image, is_model_loaded
+from typing import Optional
 import base64
 
 router = APIRouter()
 
 
 @router.post("/analyze", response_model=AIAnalysisResult)
-async def analyze_image(request: AIAnalysisRequest):
+async def analyze_image(
+    request: AIAnalysisRequest,
+    classifier_type: Optional[str] = Query(
+        None, 
+        description="Classifier type: 'oct' for VGG16, 'fundus' for MobileNetV2, or omit for auto-detection"
+    )
+):
     """
     Analyze an eye/medical image using OctoMed-7B AI model.
     
     Accepts a base64-encoded image and returns structured analysis results.
+    Optionally specify classifier_type to use a specific classifier.
     """
     if not is_model_loaded():
         raise HTTPException(
@@ -19,8 +27,15 @@ async def analyze_image(request: AIAnalysisRequest):
             detail="AI model is not loaded. Please wait for model initialization."
         )
     
+    # Validate classifier_type
+    if classifier_type and classifier_type not in ["oct", "fundus"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="classifier_type must be 'oct', 'fundus', or omitted for auto-detection"
+        )
+    
     try:
-        result = await analyze_eye_image(request.image_base64)
+        result = await analyze_eye_image(request.image_base64, classifier_type)
         return AIAnalysisResult(**result)
     except Exception as e:
         raise HTTPException(
@@ -30,11 +45,18 @@ async def analyze_image(request: AIAnalysisRequest):
 
 
 @router.post("/analyze-upload", response_model=AIAnalysisResult)
-async def analyze_uploaded_image(file: UploadFile = File(...)):
+async def analyze_uploaded_image(
+    file: UploadFile = File(...),
+    classifier_type: Optional[str] = Query(
+        None, 
+        description="Classifier type: 'oct' for VGG16, 'fundus' for MobileNetV2, or omit for auto-detection"
+    )
+):
     """
     Analyze an uploaded eye/medical image using OctoMed-7B AI model.
     
     Accepts an uploaded image file and returns structured analysis results.
+    Optionally specify classifier_type to use a specific classifier.
     """
     if not is_model_loaded():
         raise HTTPException(
@@ -50,12 +72,19 @@ async def analyze_uploaded_image(file: UploadFile = File(...)):
             detail=f"Invalid file type. Allowed: {', '.join(allowed_types)}"
         )
     
+    # Validate classifier_type
+    if classifier_type and classifier_type not in ["oct", "fundus"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="classifier_type must be 'oct', 'fundus', or omitted for auto-detection"
+        )
+    
     try:
         # Read and encode file
         contents = await file.read()
         image_base64 = base64.b64encode(contents).decode("utf-8")
         
-        result = await analyze_eye_image(image_base64)
+        result = await analyze_eye_image(image_base64, classifier_type)
         return AIAnalysisResult(**result)
     except Exception as e:
         raise HTTPException(

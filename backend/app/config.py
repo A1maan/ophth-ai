@@ -21,6 +21,21 @@ class Settings(BaseSettings):
     MODEL_NAME: str = "OctoMed/OctoMed-7B"
     LOAD_MODEL_ON_STARTUP: bool = True  # Set to False to lazy load
     ENABLE_CLASSIFIER: bool = True
+    
+    # VGG16 OCT Classifier (4 classes)
+    OCT_CLASSIFIER_WEIGHTS_PATH: str = "ml/best_weights_classifier.h5"
+    OCT_CLASSIFIER_LABELS: List[str] = ["CNV", "DME", "DRUSEN", "NORMAL"]
+    OCT_GRADCAM_LAYER: str = "block5_conv3"
+    
+    # MobileNetV2 Fundus Classifier (8 classes)
+    FUNDUS_CLASSIFIER_WEIGHTS_PATH: str = "ml/MobileNetV2_custom.h5"
+    FUNDUS_CLASSIFIER_LABELS: List[str] = ["AMD", "Cataract", "Diabetes", "Glaucoma", "Hypertension", "Myopia", "Normal", "Other"]
+    FUNDUS_GRADCAM_LAYER: str = "block_16_project"
+    
+    # Default classifier (can be "oct" or "fundus")
+    DEFAULT_CLASSIFIER: str = "oct"
+    
+    # Legacy aliases for backward compatibility
     CLASSIFIER_WEIGHTS_PATH: str = "ml/best_weights_classifier.h5"
     CLASSIFIER_LABELS: List[str] = ["CNV", "DME", "DRUSEN", "NORMAL"]
     

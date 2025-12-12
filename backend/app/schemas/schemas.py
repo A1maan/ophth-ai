@@ -40,9 +40,35 @@ class OculomicsData(BaseModel):
 
 # AI Analysis Schemas
 class ClassifierResult(BaseModel):
+    model: Optional[str] = None
+    classifier_type: Optional[str] = None  # "oct" or "fundus"
     label: str
     confidence: float = Field(..., ge=0, le=100)
     probabilities: Dict[str, float]
+    gradcam_layer: Optional[str] = None
+
+
+class GradCAMInsights(BaseModel):
+    focus_region: str
+    focus_center: Dict[str, int]  # {"x": int, "y": int}
+    high_activation_percentage: float
+    concentration_score: float
+    interpretation: str
+
+
+class GradCAMResult(BaseModel):
+    image: str = Field(..., description="Base64 encoded Grad-CAM overlay image")
+    insights: GradCAMInsights
+
+
+class DualClassifierResults(BaseModel):
+    oct: Optional[ClassifierResult] = None
+    fundus: Optional[ClassifierResult] = None
+
+
+class DualGradCAMResults(BaseModel):
+    oct: Optional[GradCAMResult] = None
+    fundus: Optional[GradCAMResult] = None
 
 
 class AIAnalysisResult(BaseModel):
@@ -52,6 +78,10 @@ class AIAnalysisResult(BaseModel):
     recommendation: str
     explanation: str
     classifier: Optional[ClassifierResult] = None
+    classifiers: Optional[Dict[str, ClassifierResult]] = Field(None, description="Results from both OCT and Fundus classifiers")
+    gradcamImage: Optional[str] = Field(None, description="Base64 encoded Grad-CAM overlay image (primary)")
+    gradcamInsights: Optional[GradCAMInsights] = None
+    gradcamResults: Optional[Dict[str, GradCAMResult]] = Field(None, description="Grad-CAM results from both classifiers")
 
 
 class AIAnalysisRequest(BaseModel):

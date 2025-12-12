@@ -145,9 +145,25 @@ async def delete_patient(patient_id: str, db: Session = Depends(get_db)):
 
 
 @router.post("/{patient_id}/analyze", response_model=PatientResponseCamel)
-async def trigger_ai_analysis(patient_id: str, db: Session = Depends(get_db)):
-    """Trigger AI analysis for a patient's image."""
-    from app.services.gemini import analyze_eye_image
+async def trigger_ai_analysis(
+    patient_id: str, 
+    classifier_type: str = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Trigger AI analysis for a patient's image using OctoMed + Grad-CAM.
+    
+    Args:
+        patient_id: Patient ID
+        classifier_type: "oct", "fundus", or None (runs both and picks best)
+    """
+    from app.services.octomed import analyze_eye_image, is_model_loaded
+    
+    if not is_model_loaded():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AI model is not loaded. Please wait for model initialization."
+        )
     
     patient = db.query(Patient).filter(Patient.id == patient_id).first()
     if not patient:
@@ -162,8 +178,15 @@ async def trigger_ai_analysis(patient_id: str, db: Session = Depends(get_db)):
             detail="Patient has no image to analyze"
         )
     
+    # Validate classifier_type
+    if classifier_type and classifier_type not in ["oct", "fundus"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="classifier_type must be 'oct', 'fundus', or omitted for auto-detection"
+        )
+    
     try:
-        analysis_result = await analyze_eye_image(patient.image_url)
+        analysis_result = await analyze_eye_image(patient.image_url, classifier_type)
         patient.ai_analysis = analysis_result
         patient.workflow_step = 2  # Move to validation step
         patient.updated_at = datetime.utcnow()

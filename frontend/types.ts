@@ -5,12 +5,28 @@ export enum CaseStatus {
   DISCHARGED = 'Discharged'
 }
 
+export interface GradCAMInsights {
+  focus_region: string;
+  focus_center: { x: number; y: number };
+  high_activation_percentage: number;
+  concentration_score: number;
+  interpretation: string;
+}
+
 export interface AIAnalysisResult {
   classification: string;
   confidence: number;
   findings: string[];
   recommendation: string;
   explanation: string;
+  gradcamImage?: string; // Base64 encoded Grad-CAM overlay image
+  gradcamInsights?: GradCAMInsights;
+  classifier?: {
+    model: string;
+    label: string;
+    confidence: number;
+    probabilities: Record<string, number>;
+  };
 }
 
 export interface OculomicsData {
