@@ -16,8 +16,8 @@ import numpy as np
 from PIL import Image
 from tensorflow.keras.applications.vgg16 import VGG16
 from tensorflow.keras.applications import MobileNetV2
-from tensorflow.keras.layers import Dense, Flatten
-from tensorflow.keras.models import Model
+from tensorflow.keras.layers import Dense, Flatten, GlobalAveragePooling2D, Dropout
+from tensorflow.keras.models import Model, Sequential
 
 from app.config import settings
 
@@ -78,9 +78,57 @@ def load_fundus_model() -> Model:
     if not weights_path.exists():
         raise FileNotFoundError(f"Fundus classifier weights not found at {weights_path}")
 
-    # Build MobileNetV2 architecture matching your training notebook
+    # Try loading as a complete model first (if saved with model.save())
+    try:
+        from tensorflow.keras.models import load_model as keras_load_model
+        model = keras_load_model(str(weights_path), compile=False)
+        _fundus_model = model
+        print(f"✅ Loaded Fundus classifier (complete model) with {len(FUNDUS_LABELS)} classes")
+        return model
+    except Exception as e:
+        print(f"⚠️ Could not load as complete model: {e}")
+    
+    # Fallback: Build MobileNetV2 architecture and load weights
+    # Try different architectures to match saved weights
+    architectures = [
+        # Architecture 1: Simple top
+        lambda: _build_mobilenet_simple(),
+        # Architecture 2: With dense layers
+        lambda: _build_mobilenet_with_dense(),
+        # Architecture 3: Minimal custom layers
+        lambda: _build_mobilenet_minimal(),
+    ]
+    
+    for i, build_fn in enumerate(architectures):
+        try:
+            model = build_fn()
+            model.load_weights(str(weights_path))
+            _fundus_model = model
+            print(f"✅ Loaded Fundus classifier (MobileNetV2 arch {i+1}) with {len(FUNDUS_LABELS)} classes")
+            return model
+        except Exception as e:
+            print(f"⚠️ Architecture {i+1} failed: {e}")
+            continue
+    
+    raise ValueError(f"Could not load Fundus model weights - no matching architecture found")
+
+
+def _build_mobilenet_simple() -> Model:
+    """MobileNetV2 with simple GlobalAveragePooling + Dense output."""
     base_model = MobileNetV2(
-        weights=None,
+        weights='imagenet',
+        include_top=False,
+        input_shape=(224, 224, 3)
+    )
+    x = GlobalAveragePooling2D()(base_model.output)
+    outputs = Dense(len(FUNDUS_LABELS), activation='softmax')(x)
+    return Model(inputs=base_model.input, outputs=outputs)
+
+
+def _build_mobilenet_with_dense() -> Model:
+    """MobileNetV2 with pooling='avg' + Flatten + Dense layers."""
+    base_model = MobileNetV2(
+        weights='imagenet',
         include_top=False,
         input_shape=(224, 224, 3),
         pooling='avg'
@@ -89,11 +137,26 @@ def load_fundus_model() -> Model:
     x = Dense(256, activation='relu')(x)
     x = Dense(128, activation='relu')(x)
     outputs = Dense(len(FUNDUS_LABELS), activation='softmax')(x)
-    model = Model(inputs=base_model.input, outputs=outputs)
+    return Model(inputs=base_model.input, outputs=outputs)
 
-    model.load_weights(str(weights_path))
-    _fundus_model = model
-    print(f"✅ Loaded Fundus classifier (MobileNetV2) with {len(FUNDUS_LABELS)} classes")
+
+def _build_mobilenet_minimal() -> Model:
+    """MobileNetV2 with minimal custom layers (4 layers total)."""
+    # This matches a model with only 4 saved layers
+    base_model = MobileNetV2(
+        weights='imagenet',
+        include_top=False,
+        input_shape=(224, 224, 3)
+    )
+    base_model.trainable = False
+    
+    model = Sequential([
+        base_model,
+        GlobalAveragePooling2D(),
+        Dense(128, activation='relu'),
+        Dropout(0.5),
+        Dense(len(FUNDUS_LABELS), activation='softmax')
+    ])
     return model
 
 

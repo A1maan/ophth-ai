@@ -192,8 +192,7 @@ def generate_gradcam_for_both(
     Returns:
         Dictionary with "oct" and "fundus" keys, each containing:
             - gradcam_image: base64 encoded overlay
-            - heatmap: raw heatmap array
-            - insights: heatmap insights
+            - insights: heatmap insights (JSON-serializable)
     """
     results = {}
     
@@ -206,9 +205,9 @@ def generate_gradcam_for_both(
             )
             insights = get_gradcam_insights(heatmap)
             
+            # Don't include raw heatmap - it's not JSON serializable
             results[classifier_type] = {
                 "gradcam_image": gradcam_image,
-                "heatmap": heatmap,
                 "insights": insights
             }
         except Exception as e:
@@ -226,15 +225,15 @@ def get_gradcam_insights(heatmap: np.ndarray) -> dict:
         heatmap: Grad-CAM heatmap array (H, W)
     
     Returns:
-        Dictionary with heatmap insights
+        Dictionary with heatmap insights (all values are JSON-serializable)
     """
     # Find the region of highest activation
     max_idx = np.unravel_index(np.argmax(heatmap), heatmap.shape)
     
     # Calculate focus metrics
-    total_activation = np.sum(heatmap)
+    total_activation = float(np.sum(heatmap))
     threshold = 0.5
-    high_activation_area = np.sum(heatmap > threshold) / heatmap.size * 100
+    high_activation_area = float(np.sum(heatmap > threshold) / heatmap.size * 100)
     
     # Determine focus region (quadrant-based)
     h, w = heatmap.shape
@@ -254,7 +253,7 @@ def get_gradcam_insights(heatmap: np.ndarray) -> dict:
     focus_region = "-".join(regions)
     
     # Calculate concentration (how focused vs diffuse the attention is)
-    concentration = np.std(heatmap) * 100  # Higher = more focused
+    concentration = float(np.std(heatmap) * 100)  # Higher = more focused
     
     return {
         "focus_region": focus_region,
