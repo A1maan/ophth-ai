@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Any
 from datetime import datetime
 from enum import Enum
 
@@ -39,6 +39,12 @@ class OculomicsData(BaseModel):
 
 
 # AI Analysis Schemas
+class ModalityDetection(BaseModel):
+    modality: str  # "oct" or "fundus"
+    confidence: float = Field(..., ge=0, le=100)
+    raw_label: Optional[str] = None
+
+
 class ClassifierResult(BaseModel):
     model: Optional[str] = None
     classifier_type: Optional[str] = None  # "oct" or "fundus"
@@ -46,6 +52,7 @@ class ClassifierResult(BaseModel):
     confidence: float = Field(..., ge=0, le=100)
     probabilities: Dict[str, float]
     gradcam_layer: Optional[str] = None
+    detected_modality: Optional[ModalityDetection] = None  # Auto-detection result
 
 
 class GradCAMInsights(BaseModel):
@@ -61,16 +68,6 @@ class GradCAMResult(BaseModel):
     insights: GradCAMInsights
 
 
-class DualClassifierResults(BaseModel):
-    oct: Optional[ClassifierResult] = None
-    fundus: Optional[ClassifierResult] = None
-
-
-class DualGradCAMResults(BaseModel):
-    oct: Optional[GradCAMResult] = None
-    fundus: Optional[GradCAMResult] = None
-
-
 class AIAnalysisResult(BaseModel):
     classification: str
     confidence: float = Field(..., ge=0, le=100)
@@ -78,10 +75,11 @@ class AIAnalysisResult(BaseModel):
     recommendation: str
     explanation: str
     classifier: Optional[ClassifierResult] = None
-    classifiers: Optional[Dict[str, ClassifierResult]] = Field(None, description="Results from both OCT and Fundus classifiers")
-    gradcamImage: Optional[str] = Field(None, description="Base64 encoded Grad-CAM overlay image (primary)")
+    # Legacy fields for backward compatibility with old DB records
+    classifiers: Optional[Dict[str, Optional[ClassifierResult]]] = Field(None, exclude=True)
+    gradcamResults: Optional[Dict[str, Any]] = Field(None, exclude=True)
+    gradcamImage: Optional[str] = Field(None, description="Base64 encoded Grad-CAM overlay image")
     gradcamInsights: Optional[GradCAMInsights] = None
-    gradcamResults: Optional[Dict[str, GradCAMResult]] = Field(None, description="Grad-CAM results from both classifiers")
 
 
 class AIAnalysisRequest(BaseModel):

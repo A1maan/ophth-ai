@@ -196,15 +196,43 @@ def _preprocess_image(image: Image.Image) -> np.ndarray:
 
 def classify_image(
     image: Image.Image,
-    classifier_type: ClassifierType = None
+    classifier_type: ClassifierType = None,
+    auto_detect: bool = True
 ) -> Optional[Dict]:
     """
     Run inference on a PIL image and return prediction details.
+    
+    Args:
+        image: PIL Image to classify
+        classifier_type: "oct" or "fundus", or None for auto-detection
+        auto_detect: If True and classifier_type is None, auto-detect modality
     """
     if not settings.ENABLE_CLASSIFIER:
         return None
 
-    if classifier_type is None:
+    detected_modality = None
+    
+    # Auto-detect modality if not specified
+    if classifier_type is None and auto_detect and settings.ENABLE_MODALITY_DETECTION:
+        try:
+            from app.services.modality_detector import detect_modality, is_modality_detector_available
+            
+            if is_modality_detector_available():
+                detection = detect_modality(image)
+                detected_modality = detection
+                
+                if detection["confidence"] >= settings.MODALITY_CONFIDENCE_THRESHOLD:
+                    classifier_type = detection["modality"]
+                    print(f"🔍 Auto-detected modality: {classifier_type} ({detection['confidence']:.1f}% confidence)")
+                else:
+                    print(f"⚠️ Low confidence modality detection: {detection['modality']} ({detection['confidence']:.1f}%), using default")
+                    classifier_type = settings.DEFAULT_CLASSIFIER
+            else:
+                classifier_type = settings.DEFAULT_CLASSIFIER
+        except Exception as e:
+            print(f"⚠️ Modality detection failed: {e}, using default classifier")
+            classifier_type = settings.DEFAULT_CLASSIFIER
+    elif classifier_type is None:
         classifier_type = settings.DEFAULT_CLASSIFIER
 
     model, labels, gradcam_layer = load_classifier_model(classifier_type)
@@ -219,7 +247,7 @@ def classify_image(
 
     model_name = "VGG16-OCT" if classifier_type == "oct" else "MobileNetV2-Fundus"
     
-    return {
+    result = {
         "model": model_name,
         "classifier_type": classifier_type,
         "label": labels[pred_idx],
@@ -227,6 +255,12 @@ def classify_image(
         "probabilities": probabilities,
         "gradcam_layer": gradcam_layer,
     }
+    
+    # Include modality detection info if available
+    if detected_modality:
+        result["detected_modality"] = detected_modality
+    
+    return result
 
 
 def classify_with_both(image: Image.Image) -> Dict[str, Optional[Dict]]:

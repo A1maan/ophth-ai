@@ -35,6 +35,11 @@ class Settings(BaseSettings):
     # Default classifier (can be "oct" or "fundus")
     DEFAULT_CLASSIFIER: str = "oct"
     
+    # Modality Detector (ResNet18) - auto-detects OCT vs Fundus
+    MODALITY_CLASSIFIER_PATH: str = "ml/modality_classifier.pth"
+    ENABLE_MODALITY_DETECTION: bool = True  # Auto-detect image type
+    MODALITY_CONFIDENCE_THRESHOLD: float = 70.0  # Min confidence to trust detection
+    
     # Legacy aliases for backward compatibility
     CLASSIFIER_WEIGHTS_PATH: str = "ml/best_weights_classifier.h5"
     CLASSIFIER_LABELS: List[str] = ["CNV", "DME", "DRUSEN", "NORMAL"]

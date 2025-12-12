@@ -149,73 +149,37 @@ async def analyze_eye_image(image_data: str, classifier_type: str = None) -> dic
     classifier_context = ""
     gradcam_image = None
     gradcam_insights = None
-    all_classifier_results = {}
-    all_gradcam_results = {}
     
     if settings.ENABLE_CLASSIFIER:
         try:
             from app.services.classifier import (
                 classify_image, 
-                classify_with_both,
                 format_classifier_context,
-                format_dual_classifier_context
             )
             from app.services.gradcam import (
                 generate_gradcam_for_image, 
-                generate_gradcam_for_both,
                 get_gradcam_insights
             )
 
-            if classifier_type:
-                # Use specific classifier
-                classifier_result = classify_image(image, classifier_type)
-                classifier_context = format_classifier_context(classifier_result)
-                
-                # Generate Grad-CAM for the specific classifier
+            # classify_image now auto-detects modality if classifier_type is None
+            # This uses the ResNet18 modality detector to choose OCT vs Fundus
+            classifier_result = classify_image(image, classifier_type, auto_detect=True)
+            classifier_context = format_classifier_context(classifier_result)
+            
+            # Get the detected/used classifier type for Grad-CAM
+            used_classifier_type = classifier_result.get("classifier_type") if classifier_result else None
+            
+            # Generate Grad-CAM for the classifier that was used
+            if used_classifier_type:
                 try:
                     gradcam_image, heatmap = generate_gradcam_for_image(
                         image, 
-                        classifier_type=classifier_type
+                        classifier_type=used_classifier_type
                     )
                     gradcam_insights = get_gradcam_insights(heatmap)
-                    print(f"✅ Grad-CAM generated ({classifier_type}): {gradcam_insights['focus_region']}")
+                    print(f"✅ Grad-CAM generated ({used_classifier_type}): {gradcam_insights['focus_region']}")
                 except Exception as gc_error:
-                    print(f"⚠️ Grad-CAM generation failed ({classifier_type}): {gc_error}")
-            else:
-                # Run both classifiers
-                all_classifier_results = classify_with_both(image)
-                classifier_context = format_dual_classifier_context(all_classifier_results)
-                
-                # Determine which classifier had higher confidence
-                oct_conf = all_classifier_results.get("oct", {}).get("confidence", 0) if all_classifier_results.get("oct") else 0
-                fundus_conf = all_classifier_results.get("fundus", {}).get("confidence", 0) if all_classifier_results.get("fundus") else 0
-                
-                # Use the higher confidence result as primary
-                if oct_conf >= fundus_conf and all_classifier_results.get("oct"):
-                    classifier_result = all_classifier_results["oct"]
-                    primary_type = "oct"
-                elif all_classifier_results.get("fundus"):
-                    classifier_result = all_classifier_results["fundus"]
-                    primary_type = "fundus"
-                else:
-                    classifier_result = None
-                    primary_type = None
-                
-                # Generate Grad-CAM for both classifiers
-                try:
-                    all_gradcam_results = generate_gradcam_for_both(image)
-                    
-                    # Use primary classifier's Grad-CAM as main
-                    if primary_type and all_gradcam_results.get(primary_type):
-                        gradcam_image = all_gradcam_results[primary_type]["gradcam_image"]
-                        gradcam_insights = all_gradcam_results[primary_type]["insights"]
-                    elif all_gradcam_results.get("oct"):
-                        gradcam_image = all_gradcam_results["oct"]["gradcam_image"]
-                        gradcam_insights = all_gradcam_results["oct"]["insights"]
-                    
-                    print(f"✅ Dual Grad-CAM generated")
-                except Exception as gc_error:
-                    print(f"⚠️ Dual Grad-CAM generation failed: {gc_error}")
+                    print(f"⚠️ Grad-CAM generation failed ({used_classifier_type}): {gc_error}")
                 
         except Exception as cls_error:
             classifier_context = (
@@ -237,28 +201,21 @@ async def analyze_eye_image(image_data: str, classifier_type: str = None) -> dic
             f"- Interpretation: {gradcam_insights['interpretation']}\n"
         )
     
-    # Add dual Grad-CAM context if available
-    if all_gradcam_results:
-        dual_gradcam_parts = []
-        for gc_type, gc_data in all_gradcam_results.items():
-            if gc_data and gc_data.get("insights"):
-                ins = gc_data["insights"]
-                dual_gradcam_parts.append(
-                    f"  {gc_type.upper()}: Focus={ins['focus_region']}, "
-                    f"Activation={ins['high_activation_percentage']}%"
-                )
-        if dual_gradcam_parts:
-            gradcam_context += "\nDual Classifier Attention Maps:\n" + "\n".join(dual_gradcam_parts) + "\n"
+    # Add modality detection info to context
+    modality_context = ""
+    if classifier_result and classifier_result.get("detected_modality"):
+        det = classifier_result["detected_modality"]
+        modality_context = f"\nImage Modality: {det['modality'].upper()} (auto-detected with {det['confidence']:.1f}% confidence)\n"
     
     # Create the analysis prompt
     prompt_parts = [
         "You are an expert AI ophthalmology assistant specialized in analyzing eye and retinal images.",
-        "",
-        "Auxiliary context from CNN classifiers (use as hints but verify visually):",
+        modality_context,
+        "Auxiliary context from CNN classifier (use as hints but verify visually):",
         classifier_context or "No auxiliary classifier output is available for this image.",
         gradcam_context,
         "",
-        "Analyze this medical eye scan/image/cross-sectional OCT angiography (OCTA) B-scan of the retina and provide a detailed structured report.",
+        "Analyze this medical eye scan/image and provide a detailed structured report.",
         "Consider the Grad-CAM attention map analysis which highlights regions the classifier focused on.",
         "",
         "Respond with a JSON object containing:",
@@ -324,24 +281,11 @@ async def analyze_eye_image(image_data: str, classifier_type: str = None) -> dic
         if classifier_result:
             result["classifier"] = classifier_result
         
-        # Attach all classifier results if both were run
-        if all_classifier_results:
-            result["classifiers"] = all_classifier_results
-        
         # Attach Grad-CAM visualization
         if gradcam_image:
             result["gradcamImage"] = gradcam_image
         if gradcam_insights:
             result["gradcamInsights"] = gradcam_insights
-        
-        # Attach all Grad-CAM results if both were run
-        if all_gradcam_results:
-            result["gradcamResults"] = {
-                k: {
-                    "image": v["gradcam_image"],
-                    "insights": v["insights"]
-                } for k, v in all_gradcam_results.items() if v
-            }
         
         return result
         
