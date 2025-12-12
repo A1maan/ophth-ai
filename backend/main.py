@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 
 from app.config import settings
 from app.database import init_db
-from app.routers import patients, notifications, ai
+from app.routers import patients, notifications, ai, websocket
 
 
 @asynccontextmanager
@@ -12,6 +12,7 @@ async def lifespan(app: FastAPI):
     """Application lifespan handler."""
     # Startup: Initialize database
     print("🚀 Starting Ophth-AI Backend...")
+    print(f"   Demo Mode: {'ON' if settings.DEMO_MODE else 'OFF'}")
     init_db()
     print("✅ Database initialized")
     
@@ -27,9 +28,23 @@ async def lifespan(app: FastAPI):
     else:
         print("ℹ️ AI model will be loaded on first request (LOAD_MODEL_ON_STARTUP=False)")
     
+    # Start background scanner
+    if settings.SCANNER_ENABLED:
+        print(f"🔍 Starting background scanner (interval: {settings.SCANNER_INTERVAL_SECONDS}s)...")
+        from app.services.scanner import start_scanner
+        start_scanner()
+    else:
+        print("ℹ️ Background scanner is disabled")
+    
     yield
     
-    # Shutdown: Cleanup
+    # Shutdown: Stop scanner
+    if settings.SCANNER_ENABLED:
+        print("🛑 Stopping background scanner...")
+        from app.services.scanner import stop_scanner
+        stop_scanner()
+    
+    # Shutdown: Cleanup AI model
     print("🧹 Cleaning up resources...")
     try:
         from app.services.octomed import unload_model
@@ -75,6 +90,11 @@ app.include_router(
     ai.router,
     prefix="/api/ai",
     tags=["AI Analysis"]
+)
+
+app.include_router(
+    websocket.router,
+    tags=["WebSocket"]
 )
 
 

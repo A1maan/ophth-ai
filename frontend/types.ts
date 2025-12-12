@@ -46,5 +46,5 @@ export interface Notification {
   message: string;
   timestamp: Date;
   read: boolean;
-  type: 'info' | 'critical' | 'success';
+  type: 'info' | 'critical' | 'success' | 'warning';
 }

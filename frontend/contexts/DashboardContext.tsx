@@ -1,15 +1,22 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { Patient, Notification, CaseStatus, OculomicsData } from '../types';
+import { websocketService, WebSocketMessage, ScannerNotification } from '../services/websocketService';
+import { Toast } from '../components/ToastNotification';
 
 interface DashboardContextType {
   patients: Patient[];
   notifications: Notification[];
   unreadCount: number;
+  toasts: Toast[];
+  wsConnected: boolean;
   addPatient: (patient: Patient) => void;
   updatePatient: (id: string, updates: Partial<Patient>) => void;
   markNotificationRead: (id: string) => void;
   simulateNewCase: () => void;
   getPatientById: (id: string) => Patient | undefined;
+  addToast: (toast: Omit<Toast, 'id'>) => string;
+  dismissToast: (id: string) => void;
+  clearAllToasts: () => void;
 }
 
 const DashboardContext = createContext<DashboardContextType | undefined>(undefined);
@@ -83,8 +90,104 @@ interface DashboardProviderProps {
 export const DashboardProvider = ({ children }: DashboardProviderProps) => {
   const [patients, setPatients] = useState<Patient[]>(INITIAL_PATIENTS);
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const [wsConnected, setWsConnected] = useState(false);
 
   const unreadCount = notifications.filter(n => !n.read).length;
+
+  // Toast management
+  const addToast = useCallback((toast: Omit<Toast, 'id'>): string => {
+    const id = `toast-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const newToast: Toast = {
+      ...toast,
+      id,
+      duration: toast.duration ?? (toast.type === 'critical' ? 0 : 8000),
+    };
+    setToasts((prev) => [...prev, newToast]);
+    return id;
+  }, []);
+
+  const dismissToast = useCallback((id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
+  const clearAllToasts = useCallback(() => {
+    setToasts([]);
+  }, []);
+
+  // Handle WebSocket messages
+  const handleWebSocketMessage = useCallback((message: WebSocketMessage) => {
+    if (message.type === 'connection_status') {
+      setWsConnected(message.data.status === 'connected');
+      
+      if (message.data.status === 'connected') {
+        addToast({
+          type: 'success',
+          title: 'Connected',
+          message: 'Real-time notifications are now active',
+          duration: 3000,
+        });
+      } else if (message.data.status === 'disconnected') {
+        addToast({
+          type: 'warning',
+          title: 'Disconnected',
+          message: 'Real-time notifications are temporarily unavailable',
+          duration: 5000,
+        });
+      }
+    } else if (message.type === 'scanner_notification') {
+      const scannerData = (message as ScannerNotification).data;
+      
+      // Determine toast title based on severity
+      const getToastTitle = (severity: string): string => {
+        switch (severity) {
+          case 'critical':
+            return '🚨 Critical Finding Detected!';
+          case 'warning':
+            return '⚠️ Abnormality Detected';
+          case 'success':
+            return '✅ Normal Scan Result';
+          default:
+            return 'ℹ️ Analysis Complete';
+        }
+      };
+      
+      // Map severity to toast type (success maps to success, others stay same)
+      const toastType = scannerData.severity as 'critical' | 'warning' | 'info' | 'success';
+      
+      // Add toast notification
+      addToast({
+        type: toastType,
+        title: getToastTitle(scannerData.severity),
+        message: scannerData.message,
+        patientId: scannerData.patient_id,
+        patientName: scannerData.patient_name,
+        duration: scannerData.severity === 'critical' ? 0 : 10000,
+      });
+
+      // Add to notifications list (in-memory for demo)
+      const newNotification: Notification = {
+        id: `notif-${Date.now()}`,
+        patientId: scannerData.patient_id,
+        message: scannerData.message,
+        timestamp: new Date(scannerData.timestamp),
+        read: false,
+        type: scannerData.severity,
+      };
+      setNotifications((prev) => [newNotification, ...prev]);
+    }
+  }, [addToast]);
+
+  // Connect to WebSocket on mount
+  useEffect(() => {
+    websocketService.connect();
+    const unsubscribe = websocketService.subscribe(handleWebSocketMessage);
+
+    return () => {
+      unsubscribe();
+      websocketService.disconnect();
+    };
+  }, [handleWebSocketMessage]);
 
   const addPatient = (patient: Patient) => {
     setPatients(prev => [patient, ...prev]);
@@ -146,12 +249,17 @@ export const DashboardProvider = ({ children }: DashboardProviderProps) => {
     <DashboardContext.Provider value={{ 
       patients, 
       notifications, 
-      unreadCount, 
+      unreadCount,
+      toasts,
+      wsConnected, 
       addPatient, 
       updatePatient, 
       markNotificationRead,
       simulateNewCase,
-      getPatientById
+      getPatientById,
+      addToast,
+      dismissToast,
+      clearAllToasts,
     }}>
       {children}
     </DashboardContext.Provider>
