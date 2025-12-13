@@ -8,13 +8,16 @@ import {
   Activity, 
   Bell, 
   Menu,
-  Plus
+  Plus,
+  Wifi,
+  WifiOff,
+  AlertTriangle
 } from 'lucide-react';
 import { useDashboard } from '../contexts/DashboardContext';
 import NotificationDropdown from './NotificationDropdown';
 
 const Layout = () => {
-  const { unreadCount, simulateNewCase } = useDashboard();
+  const { unreadCount, simulateNewCase, realtimeStatus, latestRealtime } = useDashboard();
   const location = useLocation();
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -29,7 +32,7 @@ const Layout = () => {
       >
         <div className="h-16 flex items-center justify-center border-b border-slate-100">
           <Activity className="w-8 h-8 text-indigo-600" />
-          {isSidebarOpen && <span className="ml-3 font-bold text-xl text-slate-800 tracking-tight">MediScan</span>}
+          {isSidebarOpen && <span className="ml-3 font-bold text-xl text-slate-800 tracking-tight">OpthAI</span>}
         </div>
 
         <nav className="flex-1 py-6 px-3 space-y-1">
@@ -90,6 +93,11 @@ const Layout = () => {
               <NotificationDropdown isOpen={isNotifOpen} onClose={() => setIsNotifOpen(false)} />
             </div>
             
+            <div className={`hidden md:flex items-center gap-2 text-xs font-semibold px-3 py-1 rounded-full border ${realtimeStatus === 'connected' ? 'border-emerald-200 text-emerald-700 bg-emerald-50' : 'border-amber-200 text-amber-700 bg-amber-50'}`}>
+              {realtimeStatus === 'connected' ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
+              <span>{realtimeStatus === 'connected' ? 'Live feed' : 'Waiting for feed'}</span>
+            </div>
+
             <div className="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-white text-xs font-bold ring-2 ring-indigo-100">
               DR
             </div>
@@ -101,6 +109,37 @@ const Layout = () => {
           <Outlet />
         </main>
       </div>
+
+      {latestRealtime && (
+        <div className="fixed bottom-6 right-6 w-80 bg-white shadow-2xl border border-red-100 rounded-xl p-4 z-40 animate-pulse">
+          <div className="flex items-start gap-3">
+            <div className="p-2 rounded-lg bg-red-50 text-red-600">
+              <AlertTriangle className="w-4 h-4" />
+            </div>
+            <div>
+              <p className="text-xs uppercase font-bold text-red-500">Live Alert</p>
+              <p className="text-sm font-semibold text-slate-800">{latestRealtime.message}</p>
+              {latestRealtime.label && latestRealtime.confidence !== undefined && (
+                <p className="text-xs text-slate-500 mt-1">
+                  {latestRealtime.label} • {latestRealtime.confidence.toFixed(1)}% confidence
+                </p>
+              )}
+              {latestRealtime.probabilities && (
+                <p className="text-[11px] text-slate-500 mt-1">
+                  {Object.entries(latestRealtime.probabilities)
+                    .sort((a, b) => Number(b[1]) - Number(a[1]))
+                    .slice(0, 3)
+                    .map(([k, v]) => `${k}:${Number(v).toFixed(1)}%`)
+                    .join(' · ')}
+                </p>
+              )}
+              <p className="text-xs text-slate-500 mt-1">
+                {latestRealtime.patientId} • {new Date(latestRealtime.timestamp).toLocaleTimeString()}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

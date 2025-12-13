@@ -5,12 +5,49 @@ export enum CaseStatus {
   DISCHARGED = 'Discharged'
 }
 
+export interface ClassifierResult {
+  label: string;
+  confidence: number;
+  probabilities: Record<string, number>;
+  model?: string;
+  classifier_type?: string;
+}
+
+export interface ModalityResult {
+  modality: string;
+  confidence: number;
+  raw_label?: string;
+}
+
+export interface GradCAMInsights {
+  focus_region: string;
+  focus_center: { x: number; y: number };
+  high_activation_percentage: number;
+  concentration_score: number;
+  interpretation: string;
+}
+
+export interface CouncilVote {
+  model: string;
+  classification?: string;
+  confidence?: number;
+  findings?: string[];
+  recommendation?: string;
+  explanation?: string;
+  source?: string;
+}
+
 export interface AIAnalysisResult {
   classification: string;
   confidence: number;
   findings: string[];
   recommendation: string;
   explanation: string;
+  classifier?: ClassifierResult;
+  modality?: ModalityResult;
+  gradcam_image?: string;
+  gradcam_insights?: GradCAMInsights;
+  council_votes?: CouncilVote[];
 }
 
 export interface OculomicsData {
@@ -47,4 +84,9 @@ export interface Notification {
   timestamp: Date;
   read: boolean;
   type: 'info' | 'critical' | 'success';
+  source?: string;
+  label?: string;
+  confidence?: number;
+  probabilities?: Record<string, number>;
+  imageData?: string;
 }

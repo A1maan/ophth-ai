@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useDashboard } from '../contexts/DashboardContext';
 import { 
@@ -31,13 +31,14 @@ import {
 const PatientDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { getPatientById, updatePatient } = useDashboard();
+  const { getPatientById, updatePatient, autoAnalyzePatientId, clearAutoAnalyze } = useDashboard();
   
   // Local state for analysis process
   const [analyzing, setAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [meetingDate, setMeetingDate] = useState('');
   const [viewMode, setViewMode] = useState<'original' | 'heatmap'>('original');
+  const autoAnalyzeTriggeredRef = useRef<string | null>(null);
 
   // Get patient from context. If context updates (via updatePatient), this component re-renders.
   const patient = getPatientById(id || '');
@@ -62,6 +63,9 @@ const PatientDetails = () => {
   const currentStep = patient.workflowStep || 1;
   const analysisResult = patient.aiAnalysis;
   const oculomics = patient.oculomics;
+  const displayImage = viewMode === 'heatmap' && analysisResult?.gradcam_image
+    ? analysisResult.gradcam_image
+    : imagePreview;
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -85,7 +89,10 @@ const PatientDetails = () => {
   };
 
   const handleAnalyze = async () => {
-    if (!imagePreview) return;
+    if (!imagePreview) {
+      setError("No image available to analyze. Please upload a scan first.");
+      return;
+    }
     setAnalyzing(true);
     setError(null);
     try {
@@ -115,6 +122,30 @@ const PatientDetails = () => {
       setAnalyzing(false);
     }
   };
+
+  // If a notification requests an auto-analysis, trigger it once when we land here.
+  useEffect(() => {
+    if (!patient) return;
+    const shouldAutoAnalyze = autoAnalyzePatientId === patient.id && !analysisResult && !analyzing;
+    if (!shouldAutoAnalyze) return;
+    if (autoAnalyzeTriggeredRef.current === patient.id) return;
+    if (!imagePreview) {
+      setError("Incoming alert has no image attached. Please upload one to analyze.");
+      clearAutoAnalyze();
+      return;
+    }
+
+    autoAnalyzeTriggeredRef.current = patient.id;
+    const run = async () => {
+      try {
+        await handleAnalyze();
+      } finally {
+        clearAutoAnalyze();
+        autoAnalyzeTriggeredRef.current = null;
+      }
+    };
+    run();
+  }, [autoAnalyzePatientId, patient?.id, analysisResult, analyzing, clearAutoAnalyze, imagePreview]);
 
   const handleValidation = (status: 'approved' | 'rejected') => {
     updatePatient(patient.id, {
@@ -305,14 +336,31 @@ const PatientDetails = () => {
                 </div>
               )}
             </div>
+
+            {analysisResult && (
+              <div className="flex flex-wrap gap-2 mb-3">
+                {analysisResult.modality && (
+                  <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-100 text-slate-700 text-xs border border-slate-200">
+                    <Layers className="w-3 h-3 text-indigo-500" />
+                    {analysisResult.modality.modality.toUpperCase()} · {analysisResult.modality.confidence.toFixed(1)}%
+                  </span>
+                )}
+                {analysisResult.classifier && (
+                  <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-50 text-indigo-700 text-xs border border-indigo-100">
+                    <Microscope className="w-3 h-3" />
+                    {analysisResult.classifier.label} ({analysisResult.classifier.confidence.toFixed(1)}%)
+                  </span>
+                )}
+              </div>
+            )}
             
             <div className="aspect-square bg-slate-900 rounded-lg overflow-hidden relative group mb-4">
-              {imagePreview ? (
+              {displayImage ? (
                 <>
-                  <img src={imagePreview} alt="Scan" className="w-full h-full object-fill transition-opacity" />
+                  <img src={displayImage} alt="Scan" className="w-full h-full object-fill transition-opacity" />
                   
-                  {/* Grad-CAM Simulation Overlay */}
-                  {viewMode === 'heatmap' && (
+                  {/* Grad-CAM Overlay (real or fallback) */}
+                  {viewMode === 'heatmap' && !analysisResult?.gradcam_image && (
                     <div 
                       className="absolute inset-0 opacity-60 mix-blend-overlay pointer-events-none animate-in fade-in duration-700"
                       style={{
@@ -325,15 +373,32 @@ const PatientDetails = () => {
                   {/* Heatmap Legend */}
                   {viewMode === 'heatmap' && (
                      <div className="absolute bottom-4 left-4 right-4 bg-black/70 backdrop-blur-md rounded-lg p-3 text-white pointer-events-none animate-in slide-in-from-bottom-2">
-                       <p className="text-xs font-semibold mb-1 flex items-center gap-1.5">
-                         <Activity className="w-3 h-3 text-red-400" />
-                         AI Focus Areas
-                       </p>
-                       <div className="h-1.5 w-full bg-gradient-to-r from-blue-500 via-green-500 via-yellow-500 to-red-500 rounded-full"></div>
-                       <div className="flex justify-between text-[10px] mt-1 text-slate-300">
-                         <span>Low Confidence</span>
-                         <span>High Attention</span>
-                       </div>
+                       {analysisResult?.gradcam_insights ? (
+                         <>
+                           <p className="text-xs font-semibold mb-1 flex items-center gap-1.5">
+                             <Activity className="w-3 h-3 text-red-400" />
+                             Grad-CAM focus: {analysisResult.gradcam_insights.focus_region}
+                           </p>
+                           <p className="text-[11px] text-slate-200 leading-snug">
+                             {analysisResult.gradcam_insights.interpretation}
+                           </p>
+                           <p className="text-[11px] text-slate-300 mt-1">
+                             Hot region covers {analysisResult.gradcam_insights.high_activation_percentage}% • Concentration {analysisResult.gradcam_insights.concentration_score}
+                           </p>
+                         </>
+                       ) : (
+                         <>
+                           <p className="text-xs font-semibold mb-1 flex items-center gap-1.5">
+                             <Activity className="w-3 h-3 text-red-400" />
+                             AI Focus Areas
+                           </p>
+                           <div className="h-1.5 w-full bg-gradient-to-r from-blue-500 via-green-500 via-yellow-500 to-red-500 rounded-full"></div>
+                           <div className="flex justify-between text-[10px] mt-1 text-slate-300">
+                             <span>Low Confidence</span>
+                             <span>High Attention</span>
+                           </div>
+                         </>
+                       )}
                      </div>
                   )}
 
@@ -509,6 +574,23 @@ const PatientDetails = () => {
                     </div>
                   </div>
                 </div>
+
+                {(analysisResult.modality || analysisResult.classifier) && (
+                  <div className="px-6 py-3 flex flex-wrap gap-3 text-xs text-slate-600 border-b border-slate-100">
+                    {analysisResult.modality && (
+                      <span className="inline-flex items-center gap-2 bg-slate-50 px-3 py-1 rounded-md border border-slate-100">
+                        <Layers className="w-3 h-3 text-indigo-500" />
+                        Modality: {analysisResult.modality.modality.toUpperCase()} ({analysisResult.modality.confidence.toFixed(1)}%)
+                      </span>
+                    )}
+                    {analysisResult.classifier && (
+                      <span className="inline-flex items-center gap-2 bg-slate-50 px-3 py-1 rounded-md border border-slate-100">
+                        <Microscope className="w-3 h-3 text-amber-500" />
+                        Auxiliary: {analysisResult.classifier.label} ({analysisResult.classifier.confidence.toFixed(1)}%)
+                      </span>
+                    )}
+                  </div>
+                )}
 
                 <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-8">
                    <div>
